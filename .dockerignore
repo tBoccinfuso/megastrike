@@ -1,0 +1,9 @@
+.git
+.cpcache
+.lsp
+.clj-kondo
+.idea
+.vscode
+target
+classes
+*.log

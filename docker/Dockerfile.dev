@@ -1,0 +1,23 @@
+
+FROM clojure:temurin-17-tools-deps-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgtk-3-0 \
+    libxtst6 \
+    libxrender1 \
+    libxi6 \
+    libgl1 \
+    libasound2 \
+    libfreetype6 \
+    fontconfig \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG HOST_UID=1000
+ARG HOST_GID=1000
+
+RUN mkdir -p /home/dev/.clojure /home/dev/.m2 /home/dev/.gitlibs \
+    && chown -R ${HOST_UID}:${HOST_GID} /home/dev
+
+WORKDIR /workspace
+
+CMD ["bash"]

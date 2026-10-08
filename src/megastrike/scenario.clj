@@ -21,7 +21,10 @@
 
 (defn write-forces
   [forces]
-  (mapv #(assoc % :unit-group/camo (utils/relative-path (:unit-group/camo %))) forces))
+  (mapv (fn [force]
+          (update force :unit-group/camo
+                  #(when % (utils/relative-path %))))
+        forces))
 
 (defn write-mapsheets
   [sheets]
@@ -29,15 +32,20 @@
 
 (defn units-writer
   [units]
-  (mapv #(assoc % :unit/sprite (utils/relative-path (:unit/sprite %))) units))
+  (mapv (fn [unit]
+          (update unit :unit/sprite
+                  #(when % (utils/relative-path %))))
+        units))
 
 (defn edn-scenario-writer
   [state]
   (-> state
       (assoc :forces (write-forces (:forces state)))
-      (assoc :maps (write-mapsheets (:game-board state)))
+      (assoc :maps (if (:game-board state)
+                     (write-mapsheets (:game-board state))
+                     (:maps state)))
       (dissoc :game-board)
-      (assoc :units  (units-writer (:units state)))))
+      (assoc :units (units-writer (:units state)))))
 
 (defn initialize-forces
   [forces]
@@ -106,7 +114,6 @@
                                  :facing (keyword "direction" (if direction (utils/keyword-maker direction) "n"))
                                  :location loc})]
       mul)
-
     (:units state)))
 
 (defn set-map-dirs
@@ -137,7 +144,7 @@
 (defn board-files [dirs]
   (let [is-board-file? #(-> % .getName (str/ends-with? ".board"))
         board-files-in-dir (fn [dir]
-                             (filter is-board-file? (file-seq (io/file dir))))
+                            (filter is-board-file? (file-seq (io/file dir))))
         boards (vec (mapcat board-files-in-dir dirs))]
     boards))
 
@@ -169,21 +176,19 @@
                      y (range map-height)]
                  [x y])]
       {:map-boards (into [] (map #(pick-map % boards size-setter) maps))})
-
-    (do (prn maps)
-        (let [maps (map #(map-rotator (str/trim %)) maps)
-              width (get-in (first maps) [:temp :width])
-              height (get-in (first maps) [:temp :height])
-              offsets (for [x (range map-width)
-                            y (range map-height)]
-                        [(* width x)
-                         (* height y)])]
-          (loop [ret []
-                 n 0]
-            (if (= (count maps) n)
-              {:map-boards ret}
-              (recur (conj ret (board/create-mapsheet (get-in (nth maps n) [:original :board]) (first (nth offsets n)) (second (nth offsets n))))
-                     (inc n))))))))
+    (let [maps (map #(map-rotator (str/trim %)) maps)
+          width (get-in (first maps) [:temp :width])
+          height (get-in (first maps) [:temp :height])
+          offsets (for [x (range map-width)
+                        y (range map-height)]
+                    [(* width x)
+                     (* height y)])]
+      (loop [ret []
+             n 0]
+        (if (= (count maps) n)
+          {:map-boards ret}
+          (recur (conj ret (board/create-mapsheet (get-in (nth maps n) [:original :board]) (first (nth offsets n)) (second (nth offsets n))))
+                 (inc n)))))))
 
 (defn parse-scenario-file
   [file]
