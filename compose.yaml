@@ -1,0 +1,24 @@
+services:
+  megastrike:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+      args:
+        HOST_UID: "${HOST_UID:-1000}"
+        HOST_GID: "${HOST_GID:-1000}"
+
+    working_dir: /workspace
+    user: "${HOST_UID}:${HOST_GID}"
+    environment:
+      DISPLAY: "${DISPLAY}"
+      XAUTHORITY: /tmp/host.Xauthority
+      HOME: /home/dev
+      JAVA_TOOL_OPTIONS: "-Dprism.order=sw"
+    volumes:
+      - .:/workspace
+      - "${XAUTHORITY_FILE}:/tmp/host.Xauthority:ro"
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - "${HOST_HOME}/.cache/megastrike/m2:/home/dev/.m2"
+      - "${HOST_HOME}/.cache/megastrike/gitlibs:/home/dev/.gitlibs"
+    stdin_open: true
+    tty: true

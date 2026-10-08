@@ -10,6 +10,7 @@
    [megastrike.damage :as damage]
    [megastrike.hexagons.hex :as hex]
    [megastrike.movement :as movement]
+   [megastrike.schemas]
    [megastrike.utils :as utils]))
 
 (defn ->ranged-attack
@@ -365,4 +366,3 @@
      (basic-attack atk-data to-hit)))
   ([attack-data]
    (make-attack attack-data (utils/roll2d))))
-

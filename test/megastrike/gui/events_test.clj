@@ -13,11 +13,18 @@
 (def test-context {:lobby test-lobby :game test-game})
 
 (t/deftest filter-changed-test
-  (t/testing "Test that filtering the MUL updates the lobby MUL"
-    (let [values {"Type" "Assault"}
-          filtered (cu/filter-units test-mul values)]
-      (t/is (= (count filtered) 1))
-      (t/is (= (:unit/name (first filtered)) "Atlas")))))
+  (t/testing "Filter BattleMechs"
+    (let [filtered (cu/filter-units cu/mul :type/bm)]
+      (t/is (pos? (count filtered)))
+      (t/is (every? #(= :type/bm (:unit/type %)) filtered))))
+  (t/testing "Filter all mechs"
+    (let [filtered (cu/filter-units cu/mul :mul/mechs)]
+      (t/is (pos? (count filtered)))
+      (t/is (every? #(isa? (:unit/type %) :mul/mechs) filtered))))
+  (t/testing "Filter ground units"
+    (let [filtered (cu/filter-units cu/mul :mul/ground-units)]
+      (t/is (pos? (count filtered)))
+      (t/is (every? #(isa? (:unit/type %) :mul/ground-units) filtered)))))
 
 (t/deftest mul-selection-changed-test
   (t/testing "Test that MUL selection updates the lobby state"

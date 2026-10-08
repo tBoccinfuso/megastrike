@@ -6,11 +6,12 @@
 
 (def log-file (str utils/application-directory "megastrike.log"))
 
-(io/delete-file log-file true)
-
 (def logs
-  (mu/start-publisher! {:type :multi
-                        :publishers
-                        [{:type :console :pretty? true}
-                         {:type :simple-file :filename log-file}]}))
-
+  (if (Boolean/getBoolean "megastrike.test")
+    (fn [])
+    (do
+      (io/delete-file log-file true)
+      (mu/start-publisher! {:type :multi
+                           :publishers
+                           [{:type :console :pretty? true}
+                            {:type :simple-file :filename log-file}]}))))

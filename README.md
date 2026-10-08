@@ -7,17 +7,25 @@ A Clojure App to play Alphastrike on the computer.
 ### Package Install
 
 1. Have Java 17 installed
+
 2. Download the package file from Github for your OS
+
 3. Make the appropriate `startup` file executable for your OS
+
 4. Execute the file
 
 ### Manual Installation
 
 1. Have Java 17 installed
+
 2. Install Clojure >= 1.11 on your computer
+
 3. Clone this repository and `cd` into the directory
+
 4. Run `clojure -M:build uber`
+
 5. Make the appropriate `startup` file executable
+
 6. Execute the file
 
 ### Developer Mode
@@ -26,33 +34,74 @@ If you want to run it from source, rather than compiling, follow steps 1-3 from 
 
 This will start up and run more slowly, but it would allow you to develop the program.
 
+### Docker Development Environment
+
+Docker provides an isolated development environment for MegaStrike. Developers do not need to install Java 17 or Clojure on their host machine, and they can use any editor or IDE. The repository includes `docker/Dockerfile.dev`, `compose.yaml`, and a `Makefile` for common tasks.
+
+**Prerequisites (Linux):**
+
+- Docker Engine with the Docker Compose plugin (`docker compose`).
+- GNU Make.
+- A running X11 graphical desktop session for the JavaFX application. The current configuration has been tested on Linux Mint with X11; Windows, macOS, and Wayland may require additional display configuration.
+- Permission to access Docker. Run `docker ps` without `sudo` to verify. Membership in the `docker` group provides root-equivalent access, so grant it only to trusted users.
+
+From the repository root:
+
+```bash
+make setup    # Build the development image and prepare local dependency caches
+make run      # Launch MegaStrike's JavaFX interface
+make test     # Run the Clojure/Kaocha test suite
+make shell    # Open a Bash shell in a development container
+make clean    # Remove development containers and the Compose network
+```
+
+Run `make setup` once, then use `make run` for normal development. Rebuild with `make setup` after changing `docker/Dockerfile.dev` or the development image. Source files are bind-mounted from the repository, so ordinary code changes do not require rebuilding the image. Maven/Clojure dependency caches persist under `~/.cache/megastrike/`.
+
+**Running other Clojure commands:** use `make shell`, then run commands such as `clojure -M:run`, `clojure -X:test`, or `clojure -Sdescribe` inside the container. Exit the shell with `exit`.
+
+**Linux graphics and permissions:** the Compose configuration forwards the host's X11 display and mounts an Xauthority file. Check that `${XAUTHORITY:-$HOME/.Xauthority}` exists before running the GUI. The Makefile exports `HOST_UID`, `HOST_GID`, `HOST_HOME`, and `XAUTHORITY_FILE` for Compose, so prefer `make` commands over invoking `docker compose run` directly; invoking Compose directly without those variables can break its bind mounts. The container runs using the host user's UID/GID to avoid root-owned repository files. A shell prompt saying `I have no name!` can appear because that UID has no named account inside the container; this is cosmetic.
+
+Docker isolates project dependencies, but it does **not** sandbox host access completely: the repository is mounted read/write, the GUI uses your host display, and Docker access is privileged. Do not use untrusted images or scripts without review.
+
 ## What works
 
-Right now (v0.6.1), the game allows you to simulate combat between armies of any size using units exported from Megamek via their AlphaStrike stat generator. While the game won't stop you from using them, note that _FLYING UNITS DO NOT FLY_ and none of the rules for them have been implemented yet. I am currently hiding all the Aero elements and many of the conventional fighters, but VTOLs and Support Vehicles which fly are still in the lists, so you could "use" them.
+Right now (v0.6.1), the game allows you to simulate combat between armies of any size using units exported from Megamek via their AlphaStrike stat generator. While the game won't stop you from using them, note that *_FLYING UNITS DO NOT FLY_* and none of the rules for them have been implemented yet. I am currently hiding all the Aero elements and many of the conventional fighters, but VTOLs and Support Vehicles which fly are still in the lists, so you could "use" them.
 
 Terrain and attacks work. Most special abilities are not implemented. Exceptions are listed below.
 
 Scenario reading (from MegaMek Scenario files, .mms) works but not everything works. Things known not to work include:
 
 1. Rotating the boards
+
 2. Applying damage to unit
+
 3. Anything to do with teams (it will be a free for all)
+
 4. Minefields
+
 5. Planetary Conditions
+
 6. Some units may not be selected correctly (I think I've got all the Mechs working).
 
 ### Working Abilities
 
 - CASE
+
 - CASEII
+
 - ENE
+
 - JMPW#
+
 - JMPS#
+
 - SRM/LRM/AC Attacks not in turrets
+
 - HT Attacks not in turrets
+
 - MEL
 
-## **NEW! We have an AI** Kevin
+## \*\*NEW! We have an AI\*\* Kevin
 
 This is Kevin. We found him at a bar on Donegal with a PPC in each hand (the drink, not the weapon) and a frankly astounding bar tab. We still don't know why the bartender didn't cut him off once the tab hit 5 digits. Anyway, it turns out he's a down-on-his-luck Mercenary (is there another kind?) and in exchange for paying down his bar tab and free access to the company liquor cabinet, Kevin has agreed to play the OpFor for us.
 
@@ -98,14 +147,15 @@ If you're playing Kevin vs. Kevin, you will still need to click "Next Phase" and
 
 When you first launch the game, it will launch into a lobby screen. In this lobby screen, you will see buttons to add BattleForces and maps on the left and a space for a unit list on the right. Once you add a Battle Force via the pop-up menu, you can add units to that force by double-clicking it in the list and then clicking the "Add Unit" button below the list.
 
-**Quickstart**
+**\*\*Quickstart\*\***
+
 If you want to test it out right away, click the "Load Scenario" button, select a scenario from the folder. Then click each force in the list of forces and click the "Add/Edit Force" button, give them a Camo (You'll know you've done it when the mech sprites change color) and, if you want to play against the AI, assigned Kevin as the player for one of them and click Launch game.
 
 #### Adding Forces
 
 Forces need a name, a deployment zone (Same options as Megamek, N, NE, E, SE, S, SW, W, NW, EDG, CTR), a player, and a camo. Note that the deployment zone is not enforced as of 0.2.
 
-**NOTE: Behavior is undefined when using more than two forces, it should work, but I make no promises. Teams are not implemented at all.**
+**\*\*NOTE: Behavior is undefined when using more than two forces, it should work, but I make no promises. Teams are not implemented at all.\*\***
 
 Once you have added a force, you can select it by clicking on its name. If you click it and then click "Add/Edit Force", you will see that force's information in the popup. If you need to change their camo, you can click on the force, change the camo, and then add it again to change the info.
 
@@ -133,9 +183,9 @@ Initiative is rolled automatically. In this phase, simply press "Next Phase".
 
 #### Deployment Phase
 
-**NOTE**: Kevin does not know how to deploy units. You will need to deploy his units for him.
+**\*\*NOTE\*\***: Kevin does not know how to deploy units. You will need to deploy his units for him.
 
-To deploy a unit, click on the unit in the list on the right, then click on the hex you want to deploy in. Right now, you can deploy anywhere, you will have to manually enforce deployment zones. When you are happy with that unit's deployment, click "Deploy unit". If you want to deploy a different unit, click "Undeploy" **before** you select the next unit. When everyone has deployed, the "Next phase" will become active.
+To deploy a unit, click on the unit in the list on the right, then click on the hex you want to deploy in. Right now, you can deploy anywhere, you will have to manually enforce deployment zones. When you are happy with that unit's deployment, click "Deploy unit". If you want to deploy a different unit, click "Undeploy" **\*\*before\*\*** you select the next unit. When everyone has deployed, the "Next phase" will become active.
 
 Deploying units later in the game is not yet supported yet.
 
@@ -232,7 +282,9 @@ How you can help depends on how much you know Clojure.
 Awesome! Your help is definitely welcome! This is the largest project I've ever written in any language and help would be appreciated. We can chat about specifics but areas I know I need help with are:
 
 1. GUI redesign. cljfx is challenging. I've made a lot of progress, but there are some frustrating bugs (which I'll be logging as issues in Github) that I could use some help with.
+
 2. AI. I have Kevin written, but he needs to be made much better.
+
 3. Network. I want this to eventually be like MegaMek, able to be played over the network... I realize this will require a client-server setup and likely some extensive rewriting (though I've tried to separate things out as best I can to make that easier), but that's all I know.
 
 ### I don't know Clojure, but I've heard of Java
@@ -251,7 +303,7 @@ This program is free software; you can redistribute it and/or modify it under th
 
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
-_MechWarrior, BattleMech, ‘Mech and AeroTech are registered trademarks of The Topps Company, Inc. Original BattleTech material Copyright by Catalyst Game Labs All Rights Reserved. Used without permission._
+*_MechWarrior, BattleMech, ‘Mech and AeroTech are registered trademarks of The Topps Company, Inc. Original BattleTech material Copyright by Catalyst Game Labs All Rights Reserved. Used without permission._*
 
 ## License
 
