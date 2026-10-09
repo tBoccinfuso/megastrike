@@ -1,0 +1,210 @@
+.root {
+    -ms-bg: #141719;
+    -ms-field: #202426;
+    -ms-border: #393e41;
+    -ms-text: #d5d7d8;
+    -ms-muted: #91989b;
+    -ms-accent: #c68a3c;
+    -fx-background-color: -ms-bg;
+    -fx-font-family: "System";
+    -fx-font-size: 13px;
+}
+.menu-root { -fx-background-color: -ms-bg; }
+.menu-title { -fx-font-size: 47px; -fx-font-weight: bold; -fx-text-fill: -ms-text; }
+.section-title { -fx-font-size: 25px; -fx-font-weight: bold; -fx-text-fill: -ms-text; }
+.muted-label { -fx-text-fill: -ms-muted; }
+.menu-button {
+    -fx-background-color: -ms-field;
+    -fx-background-radius: 0;
+    -fx-border-color: -ms-border;
+    -fx-border-radius: 0;
+    -fx-text-fill: -ms-text;
+    -fx-font-weight: bold;
+    -fx-cursor: hand;
+}
+.menu-button:hover { -fx-border-color: -ms-accent; }
+.menu-button:focused { -fx-border-color: -ms-accent; }
+.menu-button.primary-button { -fx-border-color: -ms-accent; -fx-text-fill: -ms-accent; }
+
+/* Singleplayer setup: shared root palette and compact controls. */
+.skirmish-root { -fx-background-color: -ms-bg; -fx-padding: 25; }
+.skirmish-root .label { -fx-text-fill: -ms-text; }
+.skirmish-heading { -fx-font-size: 15px; -fx-font-weight: bold; }
+.skirmish-force { -fx-border-color: -ms-border; -fx-border-width: 1; -fx-padding: 16; }
+.skirmish-battlefield { -fx-border-color: -ms-border; -fx-border-width: 1; -fx-padding: 16; }
+.skirmish-pv { -fx-text-fill: -ms-accent; -fx-font-weight: bold; }
+.skirmish-root .button, .skirmish-root .combo-box, .skirmish-root .text-field {
+    -fx-background-color: -ms-field; -fx-background-radius: 0;
+    -fx-border-color: -ms-border; -fx-border-radius: 0;
+    -fx-text-fill: -ms-text;
+}
+.skirmish-root .button:hover { -fx-border-color: -ms-accent; }
+.skirmish-root .skirmish-primary { -fx-border-color: -ms-accent; -fx-text-fill: -ms-accent; }
+.skirmish-root .table-view { -fx-background-color: -ms-field; -fx-border-color: -ms-border; }
+.skirmish-root .table-row-cell { -fx-background-color: -ms-field; }
+.skirmish-root .table-cell { -fx-text-fill: -ms-text; }
+.skirmish-root .table-row-cell:selected { -fx-background-color: #493824; }
+
+/* Skirmish UI contrast and spacing. Keep appearance centralized here. */
+.skirmish-root { -fx-padding: 18; }
+.skirmish-toolbar { -fx-padding: 0 0 14 0; }
+.skirmish-root .skirmish-breadcrumb { -fx-text-fill: -ms-muted; -fx-font-size: 12px; -fx-font-weight: normal; }
+.skirmish-root .skirmish-heading { -fx-text-fill: -ms-text; -fx-font-size: 15px; -fx-font-weight: bold; }
+.skirmish-root .skirmish-pv { -fx-text-fill: -ms-accent; }
+.skirmish-root .muted-label { -fx-text-fill: -ms-muted; }
+.skirmish-root .button { -fx-padding: 8 16 8 16; -fx-min-height: 32px; -fx-cursor: hand; }
+.skirmish-root .button:disabled { -fx-opacity: 0.48; }
+.skirmish-root .combo-box, .skirmish-root .text-field { -fx-min-height: 30px; }
+.skirmish-root .combo-box .list-cell { -fx-background-color: -ms-field; -fx-text-fill: -ms-text; -fx-padding: 6 9; }
+.skirmish-root .combo-box .list-cell:filled:selected,
+.skirmish-root .combo-box .list-cell:filled:hover { -fx-background-color: #34302a; -fx-text-fill: -ms-text; }
+.skirmish-root .combo-box-popup .list-view { -fx-background-color: -ms-field; -fx-border-color: -ms-border; }
+.skirmish-root .combo-box .arrow { -fx-background-color: -ms-muted; }
+.skirmish-root .table-view .column-header,
+.skirmish-root .table-view .filler { -fx-background-color: #24292c; }
+.skirmish-root .table-view .column-header .label { -fx-text-fill: -ms-text; -fx-font-weight: bold; }
+.skirmish-root .table-view .table-row-cell:empty .table-cell { -fx-border-color: transparent; }
+.skirmish-root .table-view .table-row-cell:selected .table-cell { -fx-text-fill: -ms-text; }
+.skirmish-root .table-view .placeholder .label { -fx-text-fill: -ms-muted; }
+.skirmish-root .text-field { -fx-prompt-text-fill: -ms-muted; }
+
+/* Shared button sizing, including generated and nested controls. */
+.root .button {
+    -fx-padding: 9px 18px 9px 18px;
+    -fx-min-height: 34px;
+    -fx-background-insets: 0;
+    -fx-alignment: center;
+}
+.skirmish-root .button {
+    -fx-padding: 9px 18px 9px 18px;
+    -fx-min-height: 34px;
+}
+.skirmish-root .map-select-button {
+    -fx-min-width: 145px;
+}
+.skirmish-root .begin-battle-button {
+    -fx-min-width: 160px;
+}
+
+/* Consistent button spacing in the setup screen, including dialog-trigger buttons. */
+.skirmish-root .skirmish-action-button,
+.skirmish-root .skirmish-primary,
+.skirmish-root .map-select-button,
+.skirmish-root .begin-battle-button {
+    -fx-padding: 10px 20px 10px 20px;
+    -fx-min-height: 36px;
+    -fx-alignment: center;
+    -fx-content-display: center;
+}
+.skirmish-root .map-select-button {
+    -fx-background-color: -ms-field;
+    -fx-border-color: -ms-accent;
+    -fx-text-fill: -ms-text;
+    -fx-min-width: 145px;
+}
+.skirmish-root .roster-empty-message {
+    -fx-text-fill: -ms-muted;
+    -fx-font-size: 13px;
+}
+
+/* Global button interaction; all screens using the shared stylesheet. */
+.root .button { -fx-cursor: hand; }
+.root .button:disabled { -fx-cursor: default; }
+
+/* Menu controls, including dialog triggers, are interactive. */
+.button, .button:hover, .unit-filter-button { -fx-cursor: hand; }
+.button:disabled { -fx-cursor: default; }
+/* Unit browser: uncluttered tables and clear selection states. */
+.unit-browser { -fx-padding: 8; -fx-background-color: -ms-bg; }
+.unit-browser .label { -fx-text-fill: -ms-text; }
+.unit-browser .muted-label { -fx-text-fill: -ms-muted; }
+.unit-browser .button { -fx-background-color: -ms-field; -fx-border-color: -ms-border; -fx-text-fill: -ms-text; -fx-padding: 9 14; -fx-background-radius: 0; -fx-border-radius: 0; }
+.unit-browser .button:hover { -fx-border-color: -ms-accent; }
+.unit-browser .unit-filter-button { -fx-font-size: 11px; -fx-padding: 8 10; }
+.unit-browser .text-field { -fx-background-color: -ms-field; -fx-text-fill: -ms-text; -fx-border-color: -ms-border; -fx-background-radius: 0; }
+.unit-browser .table-view { -fx-background-color: -ms-bg; -fx-border-color: -ms-border; }
+.unit-browser .table-row-cell { -fx-background-color: -ms-bg; }
+.unit-browser .table-row-cell:filled:hover { -fx-background-color: #283039; }
+.unit-browser .table-row-cell:filled:selected { -fx-background-color: #513b23; }
+.unit-browser .table-cell { -fx-text-fill: -ms-text; }
+.unit-browser .table-view .column-header, .unit-browser .table-view .filler { -fx-background-color: -ms-field; }
+.unit-browser .table-view .column-header .label { -fx-text-fill: -ms-text; }
+.unit-browser .table-view .placeholder .label { -fx-text-fill: -ms-muted; }
+.unit-browser-details { -fx-border-color: -ms-border; -fx-border-width: 1; -fx-padding: 15; }
+.unit-browser-footer { -fx-padding: 10 0 0 0; }
+
+/* Dialog windows are separate scenes; attach theme.css to each DialogPane. */
+.ms-dialog-pane {
+    -ms-bg: #141719;
+    -ms-field: #202426;
+    -ms-border: #393e41;
+    -ms-text: #d5d7d8;
+    -ms-muted: #91989b;
+    -ms-accent: #c68a3c;
+    -fx-background-color: -ms-bg;
+    -fx-padding: 12;
+}
+.ms-dialog-pane .label { -fx-text-fill: -ms-text; }
+.ms-dialog-pane .button-bar { -fx-padding: 12 0 0 0; }
+.ms-dialog-pane .button {
+    -fx-background-color: -ms-field;
+    -fx-text-fill: -ms-text;
+    -fx-border-color: -ms-border;
+    -fx-background-radius: 0;
+    -fx-border-radius: 0;
+    -fx-padding: 9 18;
+    -fx-min-height: 34px;
+    -fx-cursor: hand;
+}
+.ms-dialog-pane .button:hover { -fx-border-color: -ms-accent; }
+.ms-dialog-pane .button:disabled { -fx-cursor: default; }
+.ms-dialog-pane .text-field {
+    -fx-background-color: -ms-field;
+    -fx-text-fill: -ms-text;
+    -fx-prompt-text-fill: -ms-muted;
+    -fx-border-color: -ms-border;
+    -fx-background-radius: 0;
+}
+.ms-dialog-pane .unit-browser { -fx-background-color: -ms-bg; }
+.ms-dialog-pane .unit-filter-caption { -fx-text-fill: -ms-muted; -fx-font-size: 11px; }
+.ms-dialog-pane .unit-filter-button { -fx-padding: 8 11; -fx-font-size: 11px; }
+.ms-dialog-pane .unit-filter-button.selected-filter {
+    -fx-border-color: -ms-accent;
+    -fx-text-fill: -ms-accent;
+    -fx-background-color: #30291f;
+}
+.ms-dialog-pane .unit-browser .table-view { -fx-background-color: -ms-bg; -fx-border-color: -ms-border; }
+.ms-dialog-pane .unit-browser .column-header, .ms-dialog-pane .unit-browser .filler { -fx-background-color: -ms-field; }
+.ms-dialog-pane .unit-browser .column-header .label { -fx-text-fill: -ms-text; }
+.ms-dialog-pane .unit-browser .column-header { -fx-cursor: hand; }
+.ms-dialog-pane .unit-browser .table-row-cell { -fx-background-color: -ms-bg; }
+.ms-dialog-pane .unit-browser .table-row-cell:filled:selected { -fx-background-color: #503b24; }
+.ms-dialog-pane .unit-browser .table-cell { -fx-text-fill: -ms-text; }
+.ms-dialog-pane .unit-browser .table-view .placeholder .label { -fx-text-fill: -ms-muted; }
+.ms-dialog-pane .unit-browser .scroll-bar { -fx-background-color: -ms-bg; }
+.ms-dialog-pane .unit-browser-details { -fx-background-color: -ms-bg; -fx-border-color: -ms-border; }
+
+/* Unit picker text contrast: dialogs have their own scene and style scope. */
+.ms-dialog-pane .unit-browser .skirmish-heading,
+.ms-dialog-pane .unit-browser-details .skirmish-heading {
+    -fx-text-fill: -ms-text;
+    -fx-font-weight: bold;
+}
+.ms-dialog-pane .unit-browser .unit-filter-button {
+    -fx-background-color: -ms-field;
+    -fx-border-color: -ms-border;
+    -fx-text-fill: -ms-text;
+    -fx-padding: 8 12 8 12;
+    -fx-min-height: 32px;
+    -fx-cursor: hand;
+}
+.ms-dialog-pane .unit-browser .unit-filter-button:hover { -fx-border-color: -ms-accent; }
+.ms-dialog-pane .unit-browser .unit-filter-button.selected-filter {
+    -fx-background-color: #30291f;
+    -fx-border-color: -ms-accent;
+    -fx-text-fill: -ms-accent;
+}
+.ms-dialog-pane .unit-browser-footer .label { -fx-text-fill: -ms-text; }
+.ms-dialog-pane .unit-browser-footer .text-field { -fx-text-fill: -ms-text; }
+
+.skirmish-error { -fx-text-fill: #e8a498; -fx-font-weight: bold; }

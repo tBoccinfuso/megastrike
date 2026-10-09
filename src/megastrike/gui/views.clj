@@ -1,9 +1,11 @@
 (ns megastrike.gui.views
   (:require
    [cljfx.api :as fx]
+   [megastrike.gui.theme.theme :as theme]
    [megastrike.gui.elements :as elements]
    [megastrike.gui.events :as events]
    [megastrike.gui.lobby.views :as lobby]
+   [megastrike.gui.lobby.skirmish :as skirmish]
    [megastrike.gui.subs :as subs]
    [megastrike.movement :as movement])
   (:import
@@ -111,35 +113,55 @@
 ;;                             :grid-pane/vgrow :always}]}}}
 
 (defn lobby-view [_]
-  {:fx/type :grid-pane
-   :children [lobby/force-pane
-              lobby/unit-pane
-              lobby/map-pane]})
+  {:fx/type skirmish/skirmish-view})
+
+(defn menu-button [label event primary?]
+  {:fx/type :button
+   :text label
+   :min-width 284
+   :pref-height 44
+   :style-class (if primary? ["menu-button" "primary-button"] ["menu-button"])
+   :on-action {:event-type event}})
 
 (defn main-menu-view [_]
-  {:fx/type :v-box
+  {:fx/type :stack-pane
+   :style-class ["menu-root"]
    :alignment :center
-   :spacing 20
-   :children [{:fx/type :label
-               :style {:-fx-font-size 30}
-               :text "Megastrike"}
-              {:fx/type elements/text-input
+   :children [{:fx/type :v-box
                :alignment :center
-               :label "Force Name: "
-               :ks [:client :player-id]}
-              {:fx/type :button
-               :text "Host New Game"
-               :on-action {:event-type ::events/host-game}}
-              {:fx/type elements/text-input
+               :spacing 13
+               :max-width 420
+               :children [{:fx/type :label
+                           :text "MEGASTRIKE"
+                           :style-class ["menu-title"]}
+                          {:fx/type :region :min-height 14}
+                          (menu-button "SINGLEPLAYER" ::events/start-singleplayer true)
+                          (menu-button "MULTIPLAYER" ::events/show-multiplayer false)
+                          (menu-button "OPTIONS" ::events/show-options false)
+                          (menu-button "QUIT" ::events/quit-application false)]}]})
+
+(defn multiplayer-menu [{:keys [fx/context]}]
+  {:fx/type :stack-pane
+   :style-class ["menu-root"]
+   :children [{:fx/type :v-box
                :alignment :center
-               :label "Server IP: "
-               :ks [:client :server-ip]}
-              {:fx/type :button
-               :text "Join Network Game"
-               :on-action {:event-type ::events/join-network-game}}
-              {:fx/type :button
-               :text "Load Scenario"
-               :on-action {:event-type ::events/load-scenario}}]})
+               :spacing 12
+               :max-width 380
+               :children [{:fx/type :label :text "MULTIPLAYER" :style-class ["section-title"]}
+                          {:fx/type elements/text-input :label "Player name" :ks [:client :player-id]}
+                          {:fx/type :label :text "Hosting is available. Joining requires a separate network fix." :wrap-text true :style-class ["muted-label"]}
+                          (menu-button "HOST GAME" ::events/host-game true)
+                          (menu-button "BACK" ::events/back-to-main-menu false)]}]})
+
+(defn options-menu [_]
+  {:fx/type :stack-pane
+   :style-class ["menu-root"]
+   :children [{:fx/type :v-box
+               :alignment :center
+               :spacing 16
+               :children [{:fx/type :label :text "OPTIONS" :style-class ["section-title"]}
+                          {:fx/type :label :text "No configurable options are available yet." :style-class ["muted-label"]}
+                          (menu-button "BACK" ::events/back-to-main-menu false)]}]})
 
 (defn main-window-view [{:keys [fx/context] :as state}]
   (let [app-phase (fx/sub-val context :app-phase)]
@@ -150,8 +172,11 @@
      :height 768
      ;; THE ROUTER: Swaps the scene content based on state
      :scene {:fx/type :scene
+             :stylesheets [theme/stylesheet]
              :root (case app-phase
                      :main-menu {:fx/type main-menu-view}
+                     :multiplayer {:fx/type multiplayer-menu}
+                     :options {:fx/type options-menu}
                      :lobby     {:fx/type lobby-view}
                      :game      {:fx/type game-view}
                                                                    ;; Default fall-through

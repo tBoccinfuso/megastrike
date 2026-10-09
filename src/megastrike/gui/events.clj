@@ -13,6 +13,7 @@
    [megastrike.logs :as logs]
    [megastrike.phases :as phases]
    [megastrike.scenario :as scenario]
+   [megastrike.server.server :as server]
    [megastrike.turn-manager :as turn-manager]
    [megastrike.utils :as utils])
   (:import
@@ -38,6 +39,31 @@
   (mu/log ::unhandled-event
           :event-type event-type
           :keys (keys event)))
+
+(declare default-skirmish-forces)
+
+;; Main menu navigation
+(defmethod event-handler ::start-singleplayer
+  [{:keys [fx/context]}]
+  (let [player-id "Player 1"]
+    {:context (fx/swap-context context (fn [state] (-> state (assoc-in [:client :player-id] player-id) (assoc :singleplayer? true))))
+     :connect {:action :host :player-id player-id}}))
+
+(defmethod event-handler ::show-multiplayer
+  [{:keys [fx/context]}]
+  {:context (fx/swap-context context assoc :app-phase :multiplayer)})
+
+(defmethod event-handler ::show-options
+  [{:keys [fx/context]}]
+  {:context (fx/swap-context context assoc :app-phase :options)})
+
+(defmethod event-handler ::back-to-main-menu
+  [{:keys [fx/context]}]
+  {:context (fx/swap-context context assoc :app-phase :main-menu)})
+
+(defmethod event-handler ::quit-application
+  [_]
+  (Platform/exit))
 
 ;; Lobby Events
 
@@ -79,25 +105,58 @@
 
 (defmethod event-handler ::filter-changed
   [{:keys [fx/context values]}]
-  {:context (fx/swap-context context assoc-in [:lobby :mul] (cu/filter-units cu/mul values))})
+  {:context (fx/swap-context context
+                             (fn [state]
+                               (-> state
+                                   (assoc-in [:lobby :mul] (vec (cu/filter-units cu/mul values)))
+                                   (assoc-in [:lobby :mul-category] values))))})
 
-;; TODO Switch to Server side handling
+(defn positive-board-count [value]
+  (try
+    (let [n (Integer/parseInt (str value))]
+      (when (<= 1 n 10) n))
+    (catch Exception _ nil)))
+
+(defn skirmish-launch-error [game boards]
+  (let [forces (vec (:forces game))
+        units (vec (:units game))
+        width (positive-board-count (:map-width game))
+        height (positive-board-count (:map-height game))]
+    (cond
+      (not= 2 (count forces)) "A skirmish requires two forces."
+      (some #(str/blank? (:unit-group/name %)) forces) "Enter a name for each force."
+      (not= 2 (count (distinct (map :unit-group/keyword forces)))) "Force identifiers must be different."
+      (some #(not (#{:local-player :kevin} (:unit-group/player %))) forces) "Choose Human or Kevin (AI) for each force."
+      (some #(not (contains? (set (map :unit/battle-force units)) (:unit-group/keyword %))) forces) "Add at least one unit to each force."
+      (or (nil? width) (nil? height)) "Boards Wide and Boards High must be between 1 and 10."
+      (not= (* width height) (count boards)) "Choose a map for every board position."
+      (some nil? boards) "Choose a map for every board position."
+      :else nil)))
+
 (defmethod event-handler ::launch-game
   [{:keys [fx/context]}]
-  (let [width (subs/map-width context)
-        height (subs/map-height context)
-        map-boards (if (empty? (subs/map-boards context))
-                     (subs/board context)
-                     (board/create-board (subs/map-boards context) width height))
-        game (-> (subs/game context)
-                 (assoc :game-board map-boards)
-                 (phases/next-phase))
-        gui (-> (subs/gui context)
-                (assoc :game-view true)
-                (assoc :lobby-view false))]
-    {:context (fx/swap-context context assoc
-                               :game game :gui gui)
-     :dispatch {:event-type ::open-round-dialog}}))
+  (let [game (subs/game context)
+        selected-boards (vec (or (subs/map-boards context) []))
+        error (skirmish-launch-error game selected-boards)]
+    (if error
+      {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error] error)}
+      (let [width (positive-board-count (:map-width game))
+            height (positive-board-count (:map-height game))
+            next-game (-> game
+                          (assoc :map-width width :map-height height)
+                          (assoc :game-board (board/create-board selected-boards width height))
+                          (phases/next-phase))
+            gui (-> (subs/gui context)
+                    (assoc :game-view true :lobby-view false))]
+        ;; Singleplayer hosts the server in this same process. Keep its state in sync
+        ;; with the match that the client is now displaying.
+        (when (fx/sub-val context :singleplayer?)
+          (reset! server/game-state next-game))
+        {:context (fx/swap-context context (fn [state]
+                    (-> state
+                        (assoc :game next-game :gui gui :app-phase :game)
+                        (assoc-in [:lobby :skirmish-launch-error] nil))))
+         :dispatch {:event-type ::open-round-dialog}}))))
 
 ;; TODO Switch to server side handling
 (defmethod event-handler ::load-save
@@ -162,6 +221,55 @@
   [{:keys [fx/context fx/event]}]
   {:context (fx/swap-context context assoc-in [:gui :active-unit] (:id event))})
 
+;; Singleplayer skirmish configuration
+(def deployment-options ["N" "NE" "E" "SE" "S" "SW" "W" "NW" "EDG" "CTR"])
+
+(defn default-skirmish-forces []
+  [(bf/->battle-force "Your Force" "S" nil 1 :local-player [])
+   (bf/->battle-force "Enemy Force" "N" nil 2 :kevin [])])
+
+(defmethod event-handler ::skirmish-change-force
+  [{:keys [fx/context force-id field fx/event]}]
+  (let [forces (vec (or (subs/forces context) (default-skirmish-forces)))
+        index (.indexOf (mapv :unit-group/keyword forces) force-id)
+        value (case field
+                :unit-group/deployment (keyword "direction" (str/lower-case (str event)))
+                :unit-group/player (if (= event "Kevin (AI)") :kevin :local-player)
+                event)]
+    (when (>= index 0)
+      {:context (fx/swap-context context assoc-in [:game :forces index field] value)})))
+
+(defmethod event-handler ::skirmish-select-force
+  [{:keys [fx/context force-id]}]
+  {:context (fx/swap-context context assoc-in [:lobby :active-force] force-id)})
+
+(defmethod event-handler ::skirmish-remove-unit
+  [{:keys [fx/context unit-id]}]
+  {:context (fx/swap-context context update-in [:game :units]
+                            (fn [units] (vec (remove #(= (:unit/id %) unit-id) units))))})
+
+(defmethod event-handler ::skirmish-select-unit
+  [{:keys [fx/context fx/event force-index]}]
+  {:context (fx/swap-context context assoc-in [:lobby :skirmish-selected force-index] (:unit/id event))})
+
+(defmethod event-handler ::skirmish-add-unit
+  [{:keys [fx/context force-id]}]
+  (let [selected (subs/active-mul context)
+        skill (try (Integer/parseInt (str (or (subs/p-skill context) "4")))
+                   (catch Exception _ 4))
+        pilot {:pilot/full-name (or (subs/p-name context) "Pilot")
+               :pilot/skill skill :pilot/kills 0}]
+    (when selected
+      {:context (fx/swap-context context update-in [:game :units]
+                                (fn [units] (cu/->combat-unit {:units units :mul-unit selected
+                                                               :pilot pilot :battle-force force-id})))})))
+
+(defmethod event-handler ::skirmish-open-unit-dialog
+  [{:keys [fx/context force-id]}]
+  {:context (fx/swap-context context (fn [state] (-> state
+    (assoc-in [:lobby :active-force] force-id)
+    (assoc-in [:gui :dialogs :mul-dialog :showing] true))))})
+
 ;; Client only events
 
 (defmethod event-handler ::host-game
@@ -177,13 +285,22 @@
                        (assoc :connection-status :connected)
                        (assoc :player-id (utils/keyword-maker player-id)))]
     (client/message-server connection {:action :join-server :player-id player-id})
-    {:context (fx/swap-context context assoc :app-phase :lobby :client new-client)}))
+    {:context (fx/swap-context context (fn [state]
+                (cond-> (assoc state :app-phase :lobby :client new-client)
+                  (and (:singleplayer? state) (empty? (get-in state [:game :forces])))
+                  (assoc-in [:game :forces] (default-skirmish-forces)))))}))
 
 (defmethod event-handler :server-update-received
   [{:keys [fx/context game]}]
   (mu/log ::message-received
           :game-state (keys game))
-  {:context (fx/swap-context context assoc :game game)})
+  {:context (fx/swap-context context (fn [state]
+    (let [local-game (:game state)]
+      (assoc state :game (if (:singleplayer? state)
+                           (-> game
+                               (assoc :forces (or (:forces local-game) (default-skirmish-forces)))
+                               (assoc :units (or (:units local-game) (:units game))))
+                           game)))))})
 
 (defmethod event-handler ::show-confirmation
   [{:keys [fx/context dialog-id]}]

@@ -9,6 +9,7 @@
    [megastrike.damage :as damage]
    [megastrike.gui.events :as events]
    [megastrike.gui.subs :as subs]
+   [megastrike.gui.theme.theme :as theme]
    [megastrike.hexagons.hex :as hex]
    [megastrike.movement :as movement]
    [megastrike.pilot :as pilot]))
@@ -47,9 +48,12 @@
                                 :dialog-id dialog-id
                                 :on-confirmed on-confirmed}
                     :dialog-pane (merge {:fx/type :dialog-pane
+                                         :stylesheets [theme/stylesheet]
+                                         :style-class ["ms-dialog-pane"]
                                          :button-types [:cancel :ok]}
                                         dialog-pane)}}
    :desc (merge {:fx/type :button
+                 :cursor :hand
                  :on-action {:event-type ::events/show-confirmation
                              :dialog-id dialog-id}}
                 button)})
