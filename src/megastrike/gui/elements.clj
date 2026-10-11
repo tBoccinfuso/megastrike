@@ -104,18 +104,32 @@
       :else "rgb(215, 211, 156)")))
 
 (defn terrain-canvas
-  "Paint the static board with a single Canvas instead of thousands of polygons
-   and labels. The transparent hit layer retains existing gameplay events."
+  "Draw the static board on one Canvas. Precompute polygon arrays and text
+   placement outside the JavaFX draw callback to reduce per-redraw allocation."
   [{:keys [tiles layout]}]
   (let [scale (double (or (:scale layout) 1.0))
-        entries (mapv (fn [h] {:hex h
-                                :points (vec (hex/points h layout))
-                                :center (hex/hex->pixel h layout)
-                                :offset (hex/hex->offset h)
-                                :paint (javafx.scene.paint.Color/web (terrain-color (:terrain h)))})
+        show-coordinates? (>= scale 0.55)
+        show-elevation? (>= scale 0.75)
+        label-color (javafx.scene.paint.Color/web "#252a2c")
+        coordinate-font (javafx.scene.text.Font/font (if (< scale 0.8) 9.0 11.0))
+        elevation-font (javafx.scene.text.Font/font 10.0)
+        entries (mapv (fn [h]
+                        (let [points (vec (hex/points h layout))
+                              center (hex/hex->pixel h layout)
+                              offset (hex/hex->offset h)]
+                          {:xs (double-array (take-nth 2 points))
+                           :ys (double-array (take-nth 2 (rest points)))
+                           :center center
+                           :paint (javafx.scene.paint.Color/web (terrain-color (:terrain h)))
+                           :coordinates (when show-coordinates?
+                                          (format "%02d%02d" (:x offset) (:y offset)))
+                           :elevation (when show-elevation?
+                                        (str "Lvl " (:elevation h)))}))
                       tiles)
-        max-x (reduce (fn [m {:keys [points]}] (max m (apply max (take-nth 2 points)))) 0.0 entries)
-        max-y (reduce (fn [m {:keys [points]}] (max m (apply max (take-nth 2 (rest points))))) 0.0 entries)]
+        max-x (reduce (fn [m {:keys [xs]}]
+                        (reduce max m (seq xs))) 0.0 entries)
+        max-y (reduce (fn [m {:keys [ys]}]
+                        (reduce max m (seq ys))) 0.0 entries)]
     {:fx/type :canvas
      :width (+ max-x 4.0)
      :height (+ max-y 4.0)
@@ -124,21 +138,20 @@
                (.clearRect g 0.0 0.0 (.getWidth canvas) (.getHeight canvas))
                (.setStroke g javafx.scene.paint.Color/BLACK)
                (.setLineWidth g 1.0)
-               (doseq [{:keys [hex points paint center offset]} entries]
-                 (let [xs (double-array (take-nth 2 points))
-                       ys (double-array (take-nth 2 (rest points)))]
-                   (.setFill g paint)
-                   (.fillPolygon g xs ys 6)
-                   (.strokePolygon g xs ys 6)
-                   (when (>= scale 0.55)
-                     (.setFill g (javafx.scene.paint.Color/web "#252a2c"))
-                     (.setFont g (javafx.scene.text.Font/font (if (< scale 0.8) 9.0 11.0)))
-                     (.fillText g (format "%02d%02d" (:x offset) (:y offset))
-                                (- (:x center) (* 15 scale)) (- (:y center) (* 3 scale)))
-                     (when (>= scale 0.75)
-                       (.setFont g (javafx.scene.text.Font/font 10.0))
-                       (.fillText g (str "Lvl " (:elevation hex))
-                                  (- (:x center) (* 15 scale)) (+ (:y center) (* 18 scale)))))))))}))
+               (doseq [{:keys [xs ys paint center coordinates elevation]} entries]
+                 (.setFill g paint)
+                 (.fillPolygon g xs ys 6)
+                 (.strokePolygon g xs ys 6)
+                 (when coordinates
+                   (.setFill g label-color)
+                   (.setFont g coordinate-font)
+                   (.fillText g coordinates
+                              (- (:x center) (* 15 scale)) (- (:y center) (* 3 scale))))
+                 (when elevation
+                   (.setFill g label-color)
+                   (.setFont g elevation-font)
+                   (.fillText g elevation
+                              (- (:x center) (* 15 scale)) (+ (:y center) (* 18 scale)))))))}))
 
 (defn hex-hit-target
   "One invisible mouse target per hex, preserving the existing deployment,

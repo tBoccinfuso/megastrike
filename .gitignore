@@ -25,3 +25,4 @@ megastrike.log
 .rebel_readline_history
 data.edn
 /?/*
+perf-logs/*

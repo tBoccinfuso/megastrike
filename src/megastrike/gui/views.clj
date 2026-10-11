@@ -356,7 +356,7 @@
      :title "Megastrike"
      :width 1024
      :height 768
-     :maximized (contains? #{:battle-loading :game} app-phase)
+     :maximized (contains? #{:lobby :battle-loading :game} app-phase)
      :full-screen false
      ;; THE ROUTER: Swaps the scene content based on state
      :scene (cond-> {:fx/type :scene
