@@ -13,6 +13,7 @@
    [megastrike.logs :as logs]
    [megastrike.phases :as phases]
    [megastrike.scenario :as scenario]
+   [megastrike.server.server :as server]
    [megastrike.turn-manager :as turn-manager]
    [megastrike.utils :as utils])
   (:import
@@ -24,7 +25,8 @@
     ButtonType
     Dialog
     DialogEvent]
-   [javafx.scene.input MouseEvent]
+   [javafx.scene.input MouseEvent ScrollEvent KeyEvent KeyCode]
+   [javafx.scene.control ScrollPane]
    [javafx.stage FileChooser]))
 
 ;; Defaults and common operations
@@ -38,6 +40,31 @@
   (mu/log ::unhandled-event
           :event-type event-type
           :keys (keys event)))
+
+(declare default-skirmish-forces)
+
+;; Main menu navigation
+(defmethod event-handler ::start-singleplayer
+  [{:keys [fx/context]}]
+  (let [player-id "Player 1"]
+    {:context (fx/swap-context context (fn [state] (-> state (assoc-in [:client :player-id] player-id) (assoc :singleplayer? true :app-phase :connecting))))
+     :connect {:action :host :player-id player-id}}))
+
+(defmethod event-handler ::show-multiplayer
+  [{:keys [fx/context]}]
+  {:context (fx/swap-context context assoc :app-phase :multiplayer)})
+
+(defmethod event-handler ::show-options
+  [{:keys [fx/context]}]
+  {:context (fx/swap-context context assoc :app-phase :options)})
+
+(defmethod event-handler ::back-to-main-menu
+  [{:keys [fx/context]}]
+  {:context (fx/swap-context context assoc :app-phase :main-menu)})
+
+(defmethod event-handler ::quit-application
+  [_]
+  (Platform/exit))
 
 ;; Lobby Events
 
@@ -77,27 +104,101 @@
     (when-let [board (.showOpenDialog chooser window)]
       {:context (fx/swap-context context assoc-in [:lobby :map-boards] (assoc boards id (board/create-mapsheet (str "file:" (.getPath board)))))})))
 
+(declare positive-board-count)
+
+(defn available-mapboards []
+  (->> (file-seq (io/file "data/boards"))
+       (filter #(.isFile ^java.io.File %))
+       (filter #(str/ends-with? (str/lower-case (.getName ^java.io.File %)) ".board"))
+       (sort-by #(.getPath ^java.io.File %))
+       vec))
+
+(defmethod event-handler ::randomize-mapboards
+  [{:keys [fx/context]}]
+  (let [choices (available-mapboards)
+        width (positive-board-count (subs/map-width context))
+        height (positive-board-count (subs/map-height context))]
+    (cond
+      (or (nil? width) (nil? height))
+      {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error]
+                                 "Set Boards Wide and Boards High to values between 1 and 10.")}
+      (empty? choices)
+      {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error]
+                                 "No .board files found in data/boards.")}
+      :else
+      (let [chosen (take (* width height) (cycle (shuffle choices)))
+            mapsheets (mapv #(board/create-mapsheet (.getPath ^java.io.File %)) chosen)]
+        {:context (fx/swap-context context
+                                   (fn [state]
+                                     (-> state
+                                         (assoc-in [:lobby :map-boards] mapsheets)
+                                         (assoc-in [:lobby :skirmish-launch-error] nil))))}))))
+
 (defmethod event-handler ::filter-changed
   [{:keys [fx/context values]}]
-  {:context (fx/swap-context context assoc-in [:lobby :mul] (cu/filter-units cu/mul values))})
+  {:context (fx/swap-context context
+                             (fn [state]
+                               (-> state
+                                   (assoc-in [:lobby :mul] (vec (cu/filter-units cu/mul values)))
+                                   (assoc-in [:lobby :mul-category] values))))})
 
-;; TODO Switch to Server side handling
+(defn positive-board-count [value]
+  (try
+    (let [n (Integer/parseInt (str value))]
+      (when (<= 1 n 10) n))
+    (catch Exception _ nil)))
+
+(defn skirmish-launch-error [game boards]
+  (let [forces (vec (:forces game))
+        units (vec (:units game))
+        width (positive-board-count (:map-width game))
+        height (positive-board-count (:map-height game))]
+    (cond
+      (not= 2 (count forces)) "A skirmish requires two forces."
+      (some #(str/blank? (:unit-group/name %)) forces) "Enter a name for each force."
+      (not= 2 (count (distinct (map :unit-group/keyword forces)))) "Force identifiers must be different."
+      (some #(not (#{:local-player :kevin} (:unit-group/player %))) forces) "Choose Human or Kevin (AI) for each force."
+      (some #(not (contains? (set (map :unit/battle-force units)) (:unit-group/keyword %))) forces) "Add at least one unit to each force."
+      (or (nil? width) (nil? height)) "Boards Wide and Boards High must be between 1 and 10."
+      (not= (* width height) (count boards)) "Choose a map for every board position."
+      (some nil? boards) "Choose a map for every board position."
+      :else nil)))
+
 (defmethod event-handler ::launch-game
   [{:keys [fx/context]}]
-  (let [width (subs/map-width context)
-        height (subs/map-height context)
-        map-boards (if (empty? (subs/map-boards context))
-                     (subs/board context)
-                     (board/create-board (subs/map-boards context) width height))
-        game (-> (subs/game context)
-                 (assoc :game-board map-boards)
-                 (phases/next-phase))
-        gui (-> (subs/gui context)
-                (assoc :game-view true)
-                (assoc :lobby-view false))]
-    {:context (fx/swap-context context assoc
-                               :game game :gui gui)
-     :dispatch {:event-type ::open-round-dialog}}))
+  (let [game (subs/game context)
+        selected-boards (vec (or (subs/map-boards context) []))
+        error (skirmish-launch-error game selected-boards)]
+    (if error
+      {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error] error)}
+      (let [width (positive-board-count (:map-width game))
+            height (positive-board-count (:map-height game))]
+        {:context (fx/swap-context context assoc :app-phase :battle-loading)
+         :prepare-battle {:game game
+                          :boards selected-boards
+                          :width width
+                          :height height}}))))
+
+(defmethod event-handler ::battle-ready
+  [{:keys [fx/context game]}]
+  (when (fx/sub-val context :singleplayer?)
+    (reset! server/game-state game))
+  {:context (fx/swap-context context
+                             (fn [state]
+                               (-> state
+                                   (assoc :game game :app-phase :game)
+                                   (assoc-in [:gui :layout :scale] 0.65)
+                                   (assoc-in [:lobby :skirmish-launch-error] nil))))
+   :dispatch {:event-type ::open-round-dialog}})
+
+(defmethod event-handler ::battle-load-failed
+  [{:keys [fx/context message]}]
+  {:context (fx/swap-context context
+                             (fn [state]
+                               (-> state
+                                   (assoc :app-phase :lobby)
+                                   (assoc-in [:lobby :skirmish-launch-error]
+                                             (str "Battle initialization failed: " message)))))})
 
 ;; TODO Switch to server side handling
 (defmethod event-handler ::load-save
@@ -162,6 +263,55 @@
   [{:keys [fx/context fx/event]}]
   {:context (fx/swap-context context assoc-in [:gui :active-unit] (:id event))})
 
+;; Singleplayer skirmish configuration
+(def deployment-options ["N" "NE" "E" "SE" "S" "SW" "W" "NW" "EDG" "CTR"])
+
+(defn default-skirmish-forces []
+  [(bf/->battle-force "Your Force" "S" nil 1 :local-player [])
+   (bf/->battle-force "Enemy Force" "N" nil 2 :kevin [])])
+
+(defmethod event-handler ::skirmish-change-force
+  [{:keys [fx/context force-id field fx/event]}]
+  (let [forces (vec (or (subs/forces context) (default-skirmish-forces)))
+        index (.indexOf (mapv :unit-group/keyword forces) force-id)
+        value (case field
+                :unit-group/deployment (keyword "direction" (str/lower-case (str event)))
+                :unit-group/player (if (= event "Kevin (AI)") :kevin :local-player)
+                event)]
+    (when (>= index 0)
+      {:context (fx/swap-context context assoc-in [:game :forces index field] value)})))
+
+(defmethod event-handler ::skirmish-select-force
+  [{:keys [fx/context force-id]}]
+  {:context (fx/swap-context context assoc-in [:lobby :active-force] force-id)})
+
+(defmethod event-handler ::skirmish-remove-unit
+  [{:keys [fx/context unit-id]}]
+  {:context (fx/swap-context context update-in [:game :units]
+                            (fn [units] (vec (remove #(= (:unit/id %) unit-id) units))))})
+
+(defmethod event-handler ::skirmish-select-unit
+  [{:keys [fx/context fx/event force-index]}]
+  {:context (fx/swap-context context assoc-in [:lobby :skirmish-selected force-index] (:unit/id event))})
+
+(defmethod event-handler ::skirmish-add-unit
+  [{:keys [fx/context force-id]}]
+  (let [selected (subs/active-mul context)
+        skill (try (Integer/parseInt (str (or (subs/p-skill context) "4")))
+                   (catch Exception _ 4))
+        pilot {:pilot/full-name (or (subs/p-name context) "Pilot")
+               :pilot/skill skill :pilot/kills 0}]
+    (when selected
+      {:context (fx/swap-context context update-in [:game :units]
+                                (fn [units] (cu/->combat-unit {:units units :mul-unit selected
+                                                               :pilot pilot :battle-force force-id})))})))
+
+(defmethod event-handler ::skirmish-open-unit-dialog
+  [{:keys [fx/context force-id]}]
+  {:context (fx/swap-context context (fn [state] (-> state
+    (assoc-in [:lobby :active-force] force-id)
+    (assoc-in [:gui :dialogs :mul-dialog :showing] true))))})
+
 ;; Client only events
 
 (defmethod event-handler ::host-game
@@ -177,13 +327,22 @@
                        (assoc :connection-status :connected)
                        (assoc :player-id (utils/keyword-maker player-id)))]
     (client/message-server connection {:action :join-server :player-id player-id})
-    {:context (fx/swap-context context assoc :app-phase :lobby :client new-client)}))
+    {:context (fx/swap-context context (fn [state]
+                (cond-> (assoc state :app-phase :lobby :client new-client)
+                  (and (:singleplayer? state) (empty? (get-in state [:game :forces])))
+                  (assoc-in [:game :forces] (default-skirmish-forces)))))}))
 
 (defmethod event-handler :server-update-received
   [{:keys [fx/context game]}]
   (mu/log ::message-received
           :game-state (keys game))
-  {:context (fx/swap-context context assoc :game game)})
+  {:context (fx/swap-context context (fn [state]
+    (let [local-game (:game state)]
+      (assoc state :game (if (:singleplayer? state)
+                           (-> game
+                               (assoc :forces (or (:forces local-game) (default-skirmish-forces)))
+                               (assoc :units (or (:units local-game) (:units game))))
+                           game)))))})
 
 (defmethod event-handler ::show-confirmation
   [{:keys [fx/context dialog-id]}]
@@ -204,6 +363,18 @@
   {:context (fx/swap-context context assoc-in [:gui :dialogs dialog :showing] false)})
 
 ;; board events
+(defonce last-hex-hover-update (atom 0))
+
+(defmethod event-handler ::hex-hovered
+  [{:keys [fx/context hex]}]
+  ;; Avoid re-rendering thousands of hex nodes on every pointer crossing.
+  (let [previous (fx/sub-val context get-in [:gui :hovered-hex])
+        now (System/nanoTime)]
+    (when (and (not= previous hex)
+               (> (- now @last-hex-hover-update) 100000000))
+      (reset! last-hex-hover-update now)
+      {:context (fx/swap-context context assoc-in [:gui :hovered-hex] hex)})))
+
 (defmethod event-handler ::hex-clicked
   [{:keys [fx/context hex fx/event]}]
   (let [e ^MouseEvent event
@@ -221,10 +392,48 @@
 (defmethod event-handler ::change-size
   [{:keys [fx/context direction]}]
   (let [layout (subs/layout context)
-        new-layout (if (= direction :plus)
-                     (assoc layout :scale (+ (:scale layout) 0.1))
-                     (assoc layout :scale (- (:scale layout) 0.1)))]
-    {:context (fx/swap-context context assoc-in [:gui :layout] new-layout)}))
+        step (if (= direction :plus) 0.1 -0.1)
+        scale (-> (+ (:scale layout) step) (max 0.35) (min 2.5))]
+    {:context (fx/swap-context context assoc-in [:gui :layout :scale] scale)}))
+
+(defonce last-map-zoom (atom 0))
+
+(defmethod event-handler ::battle-map-scroll
+  [{:keys [^ScrollEvent fx/event]}]
+  (.consume event)
+  (let [now (System/nanoTime)]
+    (when (and (not (zero? (.getDeltaY event)))
+               (> (- now @last-map-zoom) 150000000))
+      (reset! last-map-zoom now)
+      {:dispatch {:event-type ::change-size
+                  :direction (if (pos? (.getDeltaY event)) :plus :minus)}})))
+
+(defmethod event-handler ::battle-key-pressed
+  [{:keys [^KeyEvent fx/event]}]
+  (let [code (.getCode event)
+        zoom (when (.isControlDown event)
+               (cond
+                 (#{KeyCode/PLUS KeyCode/ADD KeyCode/EQUALS} code) :plus
+                 (#{KeyCode/MINUS KeyCode/SUBTRACT} code) :minus))
+        pan (when-not (.isControlDown event)
+              (case code
+                KeyCode/LEFT [-1 0]
+                KeyCode/RIGHT [1 0]
+                KeyCode/UP [0 -1]
+                KeyCode/DOWN [0 1]
+                nil))]
+    (cond
+      zoom (do (.consume event)
+               {:dispatch {:event-type ::change-size :direction zoom}})
+      pan (when-let [pane ^ScrollPane (.lookup (.getRoot (.getScene ^Node (.getTarget event))) ".battle-map-scroll")]
+            (let [[dx dy] pan
+                  bounds (.getLayoutBounds (.getContent pane))
+                  viewport (.getViewportBounds pane)
+                  width (max 1.0 (- (.getWidth bounds) (.getWidth viewport)))
+                  height (max 1.0 (- (.getHeight bounds) (.getHeight viewport)))]
+              (.setHvalue pane (-> (+ (.getHvalue pane) (/ (* dx 90.0) width)) (max 0.0) (min 1.0)))
+              (.setVvalue pane (-> (+ (.getVvalue pane) (/ (* dy 90.0) height)) (max 0.0) (min 1.0)))
+              (.consume event))))))
 
 ;; Saving, loading, and Phases
 (defmethod event-handler ::auto-save

@@ -9,6 +9,7 @@
    [megastrike.damage :as damage]
    [megastrike.gui.events :as events]
    [megastrike.gui.subs :as subs]
+   [megastrike.gui.theme.theme :as theme]
    [megastrike.hexagons.hex :as hex]
    [megastrike.movement :as movement]
    [megastrike.pilot :as pilot]))
@@ -47,9 +48,12 @@
                                 :dialog-id dialog-id
                                 :on-confirmed on-confirmed}
                     :dialog-pane (merge {:fx/type :dialog-pane
+                                         :stylesheets [theme/stylesheet]
+                                         :style-class ["ms-dialog-pane"]
                                          :button-types [:cancel :ok]}
                                         dialog-pane)}}
    :desc (merge {:fx/type :button
+                 :cursor :hand
                  :on-action {:event-type ::events/show-confirmation
                              :dialog-id dialog-id}}
                 button)})
@@ -86,6 +90,8 @@
   [{:keys [hex layout]}]
   (let [points (hex/points hex layout)
         offset (hex/hex->offset hex)
+        center (hex/hex->pixel hex layout)
+        scale (double (or (:scale layout) 1.0))
         {:keys [elevation terrain]} hex
         ;; Colors below come from data/images/hexes/defaultminimap.txt
         sprite (cond
@@ -102,24 +108,29 @@
                  :else "rgb(215, 211, 156)")]
     {:fx/type :group
      :on-mouse-clicked {:event-type ::events/hex-clicked :hex hex :fx/sync true}
+     :on-mouse-entered {:event-type ::events/hex-hovered :hex hex :fx/sync true}
      :children [{:fx/type :polygon
                  :points points
                  :fill sprite
                  :stroke :black}
-                {:fx/type :label
-                 :text (format "Lvl %s %s" elevation (first (str/split terrain #":")))
-                 :layout-x (nth points 4)
-                 :layout-y (nth points 5)
-                 :font 16
-                 :translate-x (* 10 (:scale layout))
-                 :translate-y (* -20 (:scale layout))}
-                {:fx/type :label
+                ;; Draw directly in world coordinates, not as a laid-out Label.
+                ;; Text remains inside each hex and disappears at very low zoom.
+                {:fx/type :text
+                 :visible (>= scale 0.55)
+                 :mouse-transparent true
                  :text (format "%02d%02d" (:x offset) (:y offset))
-                 :layout-x (nth points 8)
-                 :layout-y (nth points 9)
-                 :font 16
-                 :translate-x (* 10 (:scale layout))
-                 :translate-y (* 10 (:scale layout))}]}))
+                 :x (- (:x center) (* 15 scale))
+                 :y (- (:y center) (* 3 scale))
+                 :font (if (< scale 0.8) 9 11)
+                 :fill "#252a2c"}
+                {:fx/type :text
+                 :visible (>= scale 0.75)
+                 :mouse-transparent true
+                 :text (str "Lvl " elevation)
+                 :x (- (:x center) (* 15 scale))
+                 :y (+ (:y center) (* 18 scale))
+                 :font 10
+                 :fill "#252a2c"}]}))
 
 (defn draw-unit
   [{:keys [fx/context unit layout]}]
@@ -128,6 +139,7 @@
         bf (battle-force/select-force forces (:unit/battle-force unit))]
     {:fx/type :group
      :on-mouse-clicked {:event-type ::events/unit-clicked :unit unit :fx/sync true}
+     :on-mouse-entered {:event-type ::events/hex-hovered :hex (:unit/location unit) :fx/sync true}
      :children [{:fx/type draw-sprite
                  :unit unit
                  :bf bf

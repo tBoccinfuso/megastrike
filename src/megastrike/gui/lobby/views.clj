@@ -1,6 +1,8 @@
 (ns megastrike.gui.lobby.views
   (:require
+   [cljfx.api :as fx]
    [cljfx.ext.table-view :as tables]
+   [clojure.string :as str]
    [com.brunobonacci.mulog :as mu]
    [megastrike.battle-force :as battle-force]
    [megastrike.combat-unit :as cu]
@@ -11,61 +13,65 @@
    [megastrike.pilot :as pilot]))
 
 (defn filter-button
-  [{:keys [values text]}]
+  [{:keys [fx/context values text]}]
   {:fx/type :button
+   :cursor :hand
    :text text
+   :style-class (if (= values (fx/sub-val context get-in [:lobby :mul-category] :mul/ground-units))
+                  ["unit-filter-button" "selected-filter"]
+                  ["unit-filter-button"])
    :on-action {:event-type ::events/filter-changed
                :fx/sync true
                :values values}})
 
-(def mul-filter-buttons
-  {:fx/type :h-box
-   :spacing 5
-   :alignment :top-center
-   :children [{:fx/type filter-button
-               :field :unit/type
-               :values :mul/ground-units
-               :text "All Ground Units"}
-              {:fx/type filter-button
-               :field :unit/type
-               :values :type/bm
-               :text "Battlemechs"}
-              {:fx/type filter-button
-               :field :unit/type
-               :values :mul/mechs
-               :text "All Mechs"}
-              {:fx/type filter-button
-               :field :unit/type
-               :values :mul/conventional
-               :text "All Conventional Units"}
-              {:fx/type filter-button
-               :field :unit/type
-               :values :mul/vehicle
-               :text "All vehicles"}
-              {:fx/type filter-button
-               :field :unit/type
-               :values :mul/infantry
-               :text "All Infantry"}]})
+(defn mul-filter-buttons [{:keys [fx/context]}]
+  {:fx/type :v-box
+   :spacing 6
+   :children [{:fx/type :label :text "FILTER BY UNIT CATEGORY" :style-class ["unit-filter-caption"]}
+              {:fx/type :h-box
+   :spacing 7
+   :alignment :center-left
+   :children [{:fx/type filter-button :values :mul/ground-units :text "GROUND UNITS"}
+              {:fx/type filter-button :values :type/bm :text "BATTLEMECHS"}
+              {:fx/type filter-button :values :mul/mechs :text "ALL MECHS"}
+              {:fx/type filter-button :values :mul/vehicle :text "VEHICLES"}
+              {:fx/type filter-button :values :mul/infantry :text "INFANTRY"}
+              {:fx/type filter-button :values :mul/conventional :text "CONVENTIONAL"}]}]})
 
-(defn name-factory
-  [unit]
-  {:text (str (:unit/full-name unit))})
+(defn unit-type-label [unit]
+  (case (:unit/type unit)
+    :type/bm "BattleMech"
+    :type/pm "ProtoMech"
+    :type/im "IndustrialMech"
+    :type/cv "Combat Vehicle"
+    :type/sv "Support Vehicle"
+    :type/ci "Infantry"
+    :type/ba "Battle Armor"
+    :type/as "Aerospace"
+    :type/af "Aerospace"
+    (-> (:unit/type unit) name str/upper-case)))
 
-(defn movement-factory
-  [unit]
-  (let [mv-string (movement/print-movement unit)]
-    (if (string? mv-string)
-      {:text mv-string}
-      {:text "No movement"})))
+(defn abilities-label [unit]
+  (let [abilities (->> (:unit/abilities unit)
+                       vals
+                       (keep :ability/output)
+                       (remove str/blank?)
+                       sort)]
+    (if (seq abilities) (str/join ", " abilities) "None")))
 
-(defn tmm-factory
-  [unit]
-  (let [tmm-string (str (movement/base-tmm unit))]
-    (if (string? tmm-string)
-      {:text tmm-string}
-      (do (mu/log ::invalid-tmm?
-                  :tmm tmm-string)
-          {:text "No tmm"}))))
+(defn unit-column [title width render]
+  {:fx/type :table-column
+   :text title
+   :pref-width width
+   :sortable true
+   :comparator (fn [a b]
+                 (let [av (render a) bv (render b)]
+                   (cond
+                     (and (number? av) (number? bv)) (compare av bv)
+                     :else (compare (str (or av "")) (str (or bv ""))))))
+   :cell-value-factory identity
+   :cell-factory {:fx/cell-type :table-cell
+                  :describe (fn [unit] {:text (str (or (render unit) "–"))})}})
 
 (defn mul-table [{:keys [fx/context]}]
   (let [mul (subs/mul context)
@@ -75,122 +81,85 @@
              :on-selected-item-changed {:event-type ::events/mul-selection-changed :fx/sync true}
              :selected-item selected}
      :desc {:fx/type :table-view
-            :columns [{:fx/type :table-column
-                       :text "Unit Name"
-                       :cell-value-factory identity
-                       :cell-factory {:fx/cell-type :table-cell
-                                      :describe name-factory}}
-                      {:fx/type :table-column
-                       :text "Type"
-                       :cell-value-factory identity
-                       :cell-factory {:fx/cell-type :table-cell
-                                      :describe (fn [x] {:text (str (:unit/type x))})}}
-                      {:fx/type :table-column
-                       :text "PV"
-                       :cell-value-factory identity
-                       :cell-factory {:fx/cell-type :table-cell
-                                      :describe (fn [x] {:text (str (:unit/base-pv x))})}}
-                      {:fx/type :table-column
-                       :text "Size"
-                       :cell-value-factory identity
-                       :cell-factory {:fx/cell-type :table-cell
-                                      :describe (fn [x] {:text (str (:unit/size x))})}}
-                      {:fx/type :table-column
-                       :text "Movement"
-                       :cell-value-factory identity
-                       :cell-factory {:fx/cell-type :table-cell
-                                      :describe movement-factory}}
-                      {:fx/type :table-column
-                       :text "TMM"
-                       :cell-value-factory identity
-                       :cell-factory {:fx/cell-type :table-cell
-                                      :describe tmm-factory}}
-                      {:fx/type :table-column
-                       :text "Armor"
-                       :cell-value-factory identity
-                       :cell-factory {:fx/cell-type :table-cell
-                                      :describe (fn [x] {:text (str (get-in x [:unit/armor :toughness/current]))})}}
-                      {:fx/type :table-column
-                       :text "Structure"
-                       :cell-value-factory identity
-                       :cell-factory {:fx/cell-type :table-cell
-                                      :describe (fn [x] {:text (str (get-in x [:unit/structure :toughness/current]))})}}
-                ;; {:fx/type :table-column
-                ;;  :text "Threshold"
-                ;;  :cell-value-factory identity
-                ;;  :cell-factory {:fx/cell-type :table-cell
-                ;;                 :describe (fn [x] {:text (pr-str (:threshold x))})}}
-                      {:fx/type :table-column
-                       :text "S"
-                       :cell-value-factory identity
-                       :cell-factory {:fx/cell-type :table-cell
-                                      :describe (fn [x] {:text (cu/print-damage x :attack/s)})}}
-                      {:fx/type :table-column
-                       :text "M"
-                       :cell-value-factory identity
-                       :cell-factory {:fx/cell-type :table-cell
-                                      :describe (fn [x] {:text (cu/print-damage x :attack/m)})}}
-                      {:fx/type :table-column
-                       :text "L"
-                       :cell-value-factory identity
-                       :cell-factory {:fx/cell-type :table-cell
-                                      :describe (fn [x] {:text (cu/print-damage x :attack/l)})}}
-                      {:fx/type :table-column
-                       :text "E"
-                       :cell-value-factory identity
-                       :cell-factory {:fx/cell-type :table-cell
-                                      :describe (fn [x] {:text (cu/print-damage x :attack/e)})}}
-                      {:fx/type :table-column
-                       :text "OV"
-                       :cell-value-factory identity
-                       :cell-factory {:fx/cell-type :table-cell
-                                      :describe (fn [x] {:text (pr-str (:unit/overheat x))})}}
-                      {:fx/type :table-column
-                       :text "Abilities"
-                       :cell-value-factory identity
-                       :cell-factory {:fx/cell-type :table-cell
-                                      :describe (fn [x] {:text (str (:unit/abilities x))})}}]
+            :style-class ["unit-browser-table"]
+            :pref-height 350
+            :column-resize-policy :constrained
+            :placeholder {:fx/type :label :text "No matching units. Try another search or category."}
+            :columns [(unit-column "UNIT" 245 :unit/full-name)
+                      (unit-column "TYPE" 105 unit-type-label)
+                      (unit-column "PV" 48 :unit/base-pv)
+                      (unit-column "MOVE" 72 movement/print-movement)
+                      (unit-column "TMM" 45 movement/base-tmm)
+                      (unit-column "ARM" 48 #(get-in % [:unit/armor :toughness/current]))
+                      (unit-column "STR" 48 #(get-in % [:unit/structure :toughness/current]))]
             :items mul}}))
 
 (def mul-chassis-search
   {:fx/type :h-box
-   :spacing 5
-   :alignment :top-center
+   :spacing 9
+   :alignment :center-left
    :children [{:fx/type elements/text-input
-               :label "Search:"
+               :label "Search units"
                :ks [:lobby :mul-search-term]}
               {:fx/type :button
-               :text "Search by name"
+               :text "SEARCH"
+               :cursor :hand
                :on-action {:event-type ::events/filter-mul :fx/sync true :field :unit/full-name}}]})
 
-(defn new-unit-buttons
-  [{:keys [fx/context]}]
-  (let [selected (subs/lobby-active-force context)
-        battle-force (if selected (get (subs/forces context) selected) nil)]
-    {:fx/type :v-box
-     :spacing 5
-     :alignment :top-center
-     :children [{:fx/type :label
-                 :text (if battle-force (:unit-group/name battle-force) "")}
-                {:fx/type :h-box
-                 :spacing 5
-                 :alignment :top-center
-                 :children [{:fx/type elements/text-input
-                             :label "Pilot Name"
-                             :ks [:lobby :pilot-name]}
-                            {:fx/type elements/text-input
-                             :label "Pilot Skill"
-                             :ks [:lobby :pilot-skill]}]}]}))
+(defn unit-detail-row [label value]
+  {:fx/type :h-box :spacing 12 :alignment :center-left
+   :children [{:fx/type :label :text label :min-width 95 :style-class ["muted-label"]}
+              {:fx/type :label :text (str (or value "–")) :wrap-text true}]})
+
+(defn unit-details [{:keys [fx/context]}]
+  (let [unit (subs/active-mul context)]
+    {:fx/type :v-box :spacing 11 :style-class ["unit-browser-details"]
+     :pref-width 255 :min-width 230
+     :children (if unit
+                 [{:fx/type :label :text (:unit/full-name unit) :wrap-text true :style-class ["skirmish-heading"]}
+                  (unit-detail-row "Type" (unit-type-label unit))
+                  (unit-detail-row "Base PV" (:unit/base-pv unit))
+                  (unit-detail-row "Movement" (movement/print-movement unit))
+                  (unit-detail-row "TMM" (:unit/tmm unit))
+                  (unit-detail-row "Armor" (get-in unit [:unit/armor :toughness/current]))
+                  (unit-detail-row "Structure" (get-in unit [:unit/structure :toughness/current]))
+                  {:fx/type :separator}
+                  {:fx/type :label :text "SPECIAL ABILITIES" :style-class ["muted-label"]}
+                  {:fx/type :label :text (abilities-label unit) :wrap-text true}]
+                 [{:fx/type :label :text "UNIT DETAILS" :style-class ["skirmish-heading"]}
+                  {:fx/type :label :text "Select a unit in the table to inspect its statistics." :wrap-text true :style-class ["muted-label"]}])}))
+
+(defn new-unit-buttons [{:keys [fx/context]}]
+  {:fx/type :grid-pane
+   :hgap 12
+   :vgap 8
+   :alignment :center-left
+   :style-class ["unit-browser-footer"]
+   :children [{:fx/type :label :text "Pilot Name" :grid-pane/row 0 :grid-pane/column 0}
+              {:fx/type :text-field
+               :pref-width 180
+               :text (str (fx/sub-val context get-in [:lobby :pilot-name]))
+               :on-text-changed {:event-type ::events/text-input :fx/sync true :ks [:lobby :pilot-name]}
+               :grid-pane/row 0 :grid-pane/column 1}
+              {:fx/type :label :text "Pilot Skill" :grid-pane/row 0 :grid-pane/column 2}
+              {:fx/type :text-field
+               :pref-width 90
+               :text (str (fx/sub-val context get-in [:lobby :pilot-skill]))
+               :on-text-changed {:event-type ::events/text-input :fx/sync true :ks [:lobby :pilot-skill]}
+               :grid-pane/row 0 :grid-pane/column 3}]})
 
 (def mul-pane
   {:fx/type :v-box
-   :spacing 5
+   :spacing 12
    :fill-width true
-   :children [{:fx/type :label
-               :text "Master Unit List"}
-              mul-filter-buttons
+   :style-class ["unit-browser"]
+   :children [{:fx/type :label :text "ADD UNIT TO FORCE" :style-class ["skirmish-heading"]}
+              {:fx/type mul-filter-buttons}
               mul-chassis-search
-              {:fx/type mul-table}
+              {:fx/type :h-box :spacing 14
+               :children [{:fx/type :v-box :h-box/hgrow :always :spacing 6
+                           :children [{:fx/type mul-table}]}
+                          {:fx/type unit-details}]}
               {:fx/type new-unit-buttons}]})
 
 (defn mul-dialog
