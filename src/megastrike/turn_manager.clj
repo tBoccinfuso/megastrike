@@ -81,16 +81,18 @@
 (defn deploy-unit
   [{:keys [units turn-order] :as game-state} {:keys [active-unit] :as gui}]
   (let [unit (cu/select-unit units active-unit)]
-    (if (movement/deployed? unit)
-      (do (mu/log ::unit-deployed
-                  :unit unit)
-          (-> game-state
-              (update-units [{:unit/id active-unit :unit/acted? true}])
-              (assoc :turn-order (rest turn-order))))
-      (mu/log ::deployment-failed
-              :unit unit))
-    {:game (assoc game-state :turn-flag false)
-     :gui (assoc gui :active-unit nil)}))
+    (if (and unit (movement/deployed? unit) (not (:unit/acted? unit)))
+      (do
+        (mu/log ::unit-deployed :unit unit)
+        {:game (-> game-state
+                   (update-units [{:unit/id active-unit :unit/acted? true}])
+                   (assoc :turn-flag false)
+                   (cond-> (= (:unit/battle-force unit) (first turn-order))
+                     (assoc :turn-order (rest turn-order))))
+         :gui (assoc gui :active-unit nil)})
+      (do
+        (mu/log ::deployment-failed :unit unit)
+        {:game game-state :gui gui}))))
 
 (defn undeploy-unit
   [game-state active-unit]

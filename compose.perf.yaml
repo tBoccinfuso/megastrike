@@ -1,0 +1,7 @@
+# Restricted resources for diagnostic runs only. Does not affect make run.
+services:
+  megastrike:
+    cpus: 1.0
+    mem_limit: 2g
+    memswap_limit: 2g
+    pids_limit: 160
