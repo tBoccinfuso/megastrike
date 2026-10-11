@@ -25,7 +25,8 @@
     ButtonType
     Dialog
     DialogEvent]
-   [javafx.scene.input MouseEvent]
+   [javafx.scene.input MouseEvent ScrollEvent KeyEvent KeyCode]
+   [javafx.scene.control ScrollPane]
    [javafx.stage FileChooser]))
 
 ;; Defaults and common operations
@@ -46,7 +47,7 @@
 (defmethod event-handler ::start-singleplayer
   [{:keys [fx/context]}]
   (let [player-id "Player 1"]
-    {:context (fx/swap-context context (fn [state] (-> state (assoc-in [:client :player-id] player-id) (assoc :singleplayer? true))))
+    {:context (fx/swap-context context (fn [state] (-> state (assoc-in [:client :player-id] player-id) (assoc :singleplayer? true :app-phase :connecting))))
      :connect {:action :host :player-id player-id}}))
 
 (defmethod event-handler ::show-multiplayer
@@ -103,6 +104,36 @@
     (when-let [board (.showOpenDialog chooser window)]
       {:context (fx/swap-context context assoc-in [:lobby :map-boards] (assoc boards id (board/create-mapsheet (str "file:" (.getPath board)))))})))
 
+(declare positive-board-count)
+
+(defn available-mapboards []
+  (->> (file-seq (io/file "data/boards"))
+       (filter #(.isFile ^java.io.File %))
+       (filter #(str/ends-with? (str/lower-case (.getName ^java.io.File %)) ".board"))
+       (sort-by #(.getPath ^java.io.File %))
+       vec))
+
+(defmethod event-handler ::randomize-mapboards
+  [{:keys [fx/context]}]
+  (let [choices (available-mapboards)
+        width (positive-board-count (subs/map-width context))
+        height (positive-board-count (subs/map-height context))]
+    (cond
+      (or (nil? width) (nil? height))
+      {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error]
+                                 "Set Boards Wide and Boards High to values between 1 and 10.")}
+      (empty? choices)
+      {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error]
+                                 "No .board files found in data/boards.")}
+      :else
+      (let [chosen (take (* width height) (cycle (shuffle choices)))
+            mapsheets (mapv #(board/create-mapsheet (.getPath ^java.io.File %)) chosen)]
+        {:context (fx/swap-context context
+                                   (fn [state]
+                                     (-> state
+                                         (assoc-in [:lobby :map-boards] mapsheets)
+                                         (assoc-in [:lobby :skirmish-launch-error] nil))))}))))
+
 (defmethod event-handler ::filter-changed
   [{:keys [fx/context values]}]
   {:context (fx/swap-context context
@@ -141,22 +172,33 @@
     (if error
       {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error] error)}
       (let [width (positive-board-count (:map-width game))
-            height (positive-board-count (:map-height game))
-            next-game (-> game
-                          (assoc :map-width width :map-height height)
-                          (assoc :game-board (board/create-board selected-boards width height))
-                          (phases/next-phase))
-            gui (-> (subs/gui context)
-                    (assoc :game-view true :lobby-view false))]
-        ;; Singleplayer hosts the server in this same process. Keep its state in sync
-        ;; with the match that the client is now displaying.
-        (when (fx/sub-val context :singleplayer?)
-          (reset! server/game-state next-game))
-        {:context (fx/swap-context context (fn [state]
-                    (-> state
-                        (assoc :game next-game :gui gui :app-phase :game)
-                        (assoc-in [:lobby :skirmish-launch-error] nil))))
-         :dispatch {:event-type ::open-round-dialog}}))))
+            height (positive-board-count (:map-height game))]
+        {:context (fx/swap-context context assoc :app-phase :battle-loading)
+         :prepare-battle {:game game
+                          :boards selected-boards
+                          :width width
+                          :height height}}))))
+
+(defmethod event-handler ::battle-ready
+  [{:keys [fx/context game]}]
+  (when (fx/sub-val context :singleplayer?)
+    (reset! server/game-state game))
+  {:context (fx/swap-context context
+                             (fn [state]
+                               (-> state
+                                   (assoc :game game :app-phase :game)
+                                   (assoc-in [:gui :layout :scale] 0.65)
+                                   (assoc-in [:lobby :skirmish-launch-error] nil))))
+   :dispatch {:event-type ::open-round-dialog}})
+
+(defmethod event-handler ::battle-load-failed
+  [{:keys [fx/context message]}]
+  {:context (fx/swap-context context
+                             (fn [state]
+                               (-> state
+                                   (assoc :app-phase :lobby)
+                                   (assoc-in [:lobby :skirmish-launch-error]
+                                             (str "Battle initialization failed: " message)))))})
 
 ;; TODO Switch to server side handling
 (defmethod event-handler ::load-save
@@ -321,6 +363,18 @@
   {:context (fx/swap-context context assoc-in [:gui :dialogs dialog :showing] false)})
 
 ;; board events
+(defonce last-hex-hover-update (atom 0))
+
+(defmethod event-handler ::hex-hovered
+  [{:keys [fx/context hex]}]
+  ;; Avoid re-rendering thousands of hex nodes on every pointer crossing.
+  (let [previous (fx/sub-val context get-in [:gui :hovered-hex])
+        now (System/nanoTime)]
+    (when (and (not= previous hex)
+               (> (- now @last-hex-hover-update) 100000000))
+      (reset! last-hex-hover-update now)
+      {:context (fx/swap-context context assoc-in [:gui :hovered-hex] hex)})))
+
 (defmethod event-handler ::hex-clicked
   [{:keys [fx/context hex fx/event]}]
   (let [e ^MouseEvent event
@@ -338,10 +392,48 @@
 (defmethod event-handler ::change-size
   [{:keys [fx/context direction]}]
   (let [layout (subs/layout context)
-        new-layout (if (= direction :plus)
-                     (assoc layout :scale (+ (:scale layout) 0.1))
-                     (assoc layout :scale (- (:scale layout) 0.1)))]
-    {:context (fx/swap-context context assoc-in [:gui :layout] new-layout)}))
+        step (if (= direction :plus) 0.1 -0.1)
+        scale (-> (+ (:scale layout) step) (max 0.35) (min 2.5))]
+    {:context (fx/swap-context context assoc-in [:gui :layout :scale] scale)}))
+
+(defonce last-map-zoom (atom 0))
+
+(defmethod event-handler ::battle-map-scroll
+  [{:keys [^ScrollEvent fx/event]}]
+  (.consume event)
+  (let [now (System/nanoTime)]
+    (when (and (not (zero? (.getDeltaY event)))
+               (> (- now @last-map-zoom) 150000000))
+      (reset! last-map-zoom now)
+      {:dispatch {:event-type ::change-size
+                  :direction (if (pos? (.getDeltaY event)) :plus :minus)}})))
+
+(defmethod event-handler ::battle-key-pressed
+  [{:keys [^KeyEvent fx/event]}]
+  (let [code (.getCode event)
+        zoom (when (.isControlDown event)
+               (cond
+                 (#{KeyCode/PLUS KeyCode/ADD KeyCode/EQUALS} code) :plus
+                 (#{KeyCode/MINUS KeyCode/SUBTRACT} code) :minus))
+        pan (when-not (.isControlDown event)
+              (case code
+                KeyCode/LEFT [-1 0]
+                KeyCode/RIGHT [1 0]
+                KeyCode/UP [0 -1]
+                KeyCode/DOWN [0 1]
+                nil))]
+    (cond
+      zoom (do (.consume event)
+               {:dispatch {:event-type ::change-size :direction zoom}})
+      pan (when-let [pane ^ScrollPane (.lookup (.getRoot (.getScene ^Node (.getTarget event))) ".battle-map-scroll")]
+            (let [[dx dy] pan
+                  bounds (.getLayoutBounds (.getContent pane))
+                  viewport (.getViewportBounds pane)
+                  width (max 1.0 (- (.getWidth bounds) (.getWidth viewport)))
+                  height (max 1.0 (- (.getHeight bounds) (.getHeight viewport)))]
+              (.setHvalue pane (-> (+ (.getHvalue pane) (/ (* dx 90.0) width)) (max 0.0) (min 1.0)))
+              (.setVvalue pane (-> (+ (.getVvalue pane) (/ (* dy 90.0) height)) (max 0.0) (min 1.0)))
+              (.consume event))))))
 
 ;; Saving, loading, and Phases
 (defmethod event-handler ::auto-save

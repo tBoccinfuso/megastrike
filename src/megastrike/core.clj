@@ -8,6 +8,8 @@
    [clojure.core.cache :as cache]
    [com.brunobonacci.mulog :as mu]
    [megastrike.client :as client]
+   [megastrike.board :as board]
+   [megastrike.phases :as phases]
    [megastrike.combat-unit :as cu]
    [megastrike.gui.events :as events]
    [megastrike.gui.views :as views]
@@ -75,6 +77,23 @@
                 :connection conn
                 :player-id player-id})))
 
+(defn prepare-battle-effect
+  [{:keys [game boards width height]} dispatch!]
+  (future
+    (try
+      (let [started (System/nanoTime)
+            next-game (-> game
+                          (assoc :map-width width :map-height height)
+                          (assoc :game-board (board/create-board boards width height))
+                          (phases/next-phase))
+            elapsed-ms (/ (- (System/nanoTime) started) 1000000)]
+        (when (< elapsed-ms 450)
+          (Thread/sleep (long (- 450 elapsed-ms))))
+        (dispatch! {:event-type ::events/battle-ready :game next-game}))
+      (catch Exception ex
+        (dispatch! {:event-type ::events/battle-load-failed
+                    :message (.getMessage ex)})))))
+
 (def event-handler
   (-> events/event-handler
       (fx/wrap-co-effects
@@ -82,7 +101,8 @@
       (fx/wrap-effects
        {:context (fx/make-reset-effect *state)
         :dispatch fx/dispatch-effect
-        :connect create-connection-effect})))
+        :connect create-connection-effect
+        :prepare-battle prepare-battle-effect})))
 
 (def type->lifecycle #(or (fx/keyword->lifecycle %)
                           (fx/fn->lifecycle-with-context %)))

@@ -208,3 +208,168 @@
 .ms-dialog-pane .unit-browser-footer .text-field { -fx-text-fill: -ms-text; }
 
 .skirmish-error { -fx-text-fill: #e8a498; -fx-font-weight: bold; }
+
+/* UI-05A: flat gunmetal battlefield shell. The existing board remains unchanged. */
+.battle-root { -fx-background-color: #141719; }
+.battle-top-bar { -fx-background-color: #1c2023; -fx-padding: 12 16; -fx-min-height: 48px; -fx-border-color: #393e41; -fx-border-width: 0 0 1 0; }
+.battle-top-text { -fx-text-fill: #d5d7d8; -fx-font-size: 14px; }
+.battle-top-accent { -fx-text-fill: #c68a3c; -fx-font-size: 14px; -fx-font-weight: bold; }
+.battle-top-brand { -fx-text-fill: #91989b; -fx-font-size: 11px; -fx-font-weight: bold; }
+.battle-sidebar-scroll { -fx-background: #141719; -fx-background-color: #141719; -fx-pref-width: 328px; -fx-min-width: 280px; -fx-max-width: 360px; -fx-border-color: #393e41; -fx-border-width: 0 0 0 1; }
+.battle-sidebar-scroll > .viewport { -fx-background-color: #141719; }
+.battle-sidebar { -fx-background-color: #141719; -fx-padding: 12; }
+.battle-panel { -fx-background-color: #1c2023; -fx-border-color: #393e41; -fx-padding: 13; }
+.battle-panel .label { -fx-text-fill: #d5d7d8; }
+.battle-panel .battle-muted { -fx-text-fill: #91989b; }
+.battle-panel .battle-panel-title { -fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #c68a3c; }
+.battle-panel .battle-selected-name { -fx-font-size: 17px; -fx-font-weight: bold; }
+.battle-panel .battle-force-title { -fx-text-fill: #aab8c0; -fx-font-weight: bold; -fx-padding: 7 0 2 0; }
+.battle-roster-row { -fx-padding: 8 10; -fx-background-color: #202426; -fx-border-color: #393e41; -fx-cursor: hand; }
+.battle-roster-row:hover { -fx-border-color: #c68a3c; }
+.battle-roster-selected { -fx-background-color: #362d22; -fx-border-color: #c68a3c; }
+.battle-panel .battle-roster-name { -fx-font-weight: bold; }
+.battle-command-bar { -fx-background-color: #1c2023; -fx-padding: 9 12; -fx-border-color: #393e41; -fx-border-width: 1 0 0 0; }
+.battle-command-bar .label { -fx-text-fill: #d5d7d8; }
+.battle-command-bar .button { -fx-background-color: #202426; -fx-background-radius: 0; -fx-border-color: #393e41; -fx-border-radius: 0; -fx-text-fill: #d5d7d8; -fx-cursor: hand; }
+.battle-command-bar .button:hover { -fx-border-color: #c68a3c; }
+.battle-command-bar .button:disabled { -fx-opacity: 0.45; -fx-cursor: default; }
+
+/* UI-05B: restrained battlefield controls and readable roster. */
+.battle-top-bar { -fx-padding: 7 14; -fx-min-height: 44px; -fx-spacing: 12; }
+.battle-top-brand { -fx-font-size: 13px; -fx-text-fill: #aab0b4; }
+.battle-top-accent { -fx-font-size: 13px; }
+.battle-top-text { -fx-font-size: 13px; }
+.battle-top-bar .button { -fx-padding: 5 12; -fx-min-height: 28px; -fx-background-color: #2b3135; -fx-border-color: #42494d; -fx-text-fill: #d5d9dc; -fx-background-radius: 0; -fx-border-radius: 0; -fx-cursor: hand; }
+.battle-top-bar .button:hover { -fx-border-color: #c68a3c; }
+.battle-sidebar-scroll { -fx-pref-width: 348px; -fx-min-width: 310px; -fx-max-width: 375px; }
+.battle-sidebar { -fx-padding: 10; }
+.battle-panel { -fx-padding: 12; -fx-background-color: #1c2023; -fx-border-color: #343b3f; }
+.battle-panel .battle-panel-title { -fx-text-fill: #cbd0d3; -fx-font-size: 13px; -fx-font-weight: bold; }
+.battle-panel .battle-selected-name { -fx-font-size: 15px; -fx-text-fill: #e2e4e5; }
+.battle-panel .battle-stat-value { -fx-text-fill: #e2e4e5; -fx-font-weight: bold; }
+.battle-panel .battle-force-title { -fx-text-fill: #b0bbc2; -fx-padding: 9 0 3 0; }
+.battle-roster-row { -fx-padding: 7 8; -fx-spacing: 8; -fx-background-color: #22282c; -fx-border-color: transparent; -fx-border-width: 0 0 1 0; -fx-cursor: hand; }
+.battle-roster-row:hover { -fx-background-color: #30383d; }
+.battle-roster-selected { -fx-background-color: #383126; -fx-border-color: #c68a3c; -fx-border-width: 1; }
+.battle-roster-row .label { -fx-text-fill: #d5d9dc; -fx-font-size: 12px; }
+.battle-roster-row .battle-roster-id { -fx-text-fill: #94bde0; -fx-font-weight: bold; }
+.battle-roster-row .battle-roster-name { -fx-font-weight: normal; }
+.battle-roster-row .battle-roster-health { -fx-text-fill: #b5bec3; }
+.battle-command-bar { -fx-padding: 8 12; -fx-spacing: 7; -fx-min-height: 54px; }
+.battle-command-bar .button { -fx-padding: 9 14; -fx-min-height: 35px; -fx-border-color: #41484c; -fx-text-fill: #d5d9dc; -fx-background-color: #292f33; -fx-cursor: hand; }
+.battle-command-bar .button:hover { -fx-background-color: #353c40; -fx-border-color: #c68a3c; }
+.battle-command-bar .button:disabled { -fx-text-fill: #7b8286; -fx-opacity: 0.68; -fx-cursor: default; }
+.battle-command-hint { -fx-text-fill: #a7b0b4; -fx-font-size: 12px; }
+
+/* UI-05C: gameplay guidance rather than cosmetic HUD treatment. */
+.battle-command-area { -fx-background-color: #1c2023; -fx-border-color: #393e41; -fx-border-width: 1 0 0 0; }
+.battle-guidance { -fx-padding: 9 14; -fx-background-color: #22282c; -fx-border-color: #393e41; -fx-border-width: 0 0 1 0; }
+.battle-guidance-step { -fx-text-fill: #c68a3c; -fx-font-weight: bold; -fx-font-size: 12px; }
+.battle-guidance-message { -fx-text-fill: #e0e4e6; -fx-font-size: 13px; }
+.battle-command-scroll { -fx-background: #1c2023; -fx-background-color: #1c2023; -fx-border-color: transparent; }
+.battle-command-scroll > .viewport { -fx-background-color: #1c2023; }
+.battle-command-bar { -fx-min-height: 56px; -fx-padding: 8 12; }
+.battle-command-bar .battle-phase-button { -fx-background-color: #30383d; -fx-text-fill: #edf0f2; -fx-border-color: #59646b; -fx-font-weight: bold; }
+.battle-command-bar .battle-phase-button:hover { -fx-border-color: #c68a3c; }
+
+/* UI-05D: keep all battle controls legible and the next action visible. */
+.battle-root .battle-top-bar .button,
+.battle-root .battle-command-area .button {
+    -fx-text-fill: #e6e9ea;
+    -fx-background-color: #2b3236;
+    -fx-border-color: #556168;
+    -fx-border-width: 1;
+    -fx-background-radius: 0;
+    -fx-border-radius: 0;
+    -fx-opacity: 1;
+    -fx-padding: 10 16;
+    -fx-font-size: 13px;
+    -fx-cursor: hand;
+}
+.battle-root .battle-top-bar .button:hover,
+.battle-root .battle-command-area .button:hover {
+    -fx-text-fill: #ffffff;
+    -fx-background-color: #384249;
+    -fx-border-color: #c68a3c;
+}
+.battle-root .battle-command-area .button:disabled {
+    -fx-text-fill: #a2aeb4;
+    -fx-background-color: #252b2f;
+    -fx-border-color: #3e474d;
+    -fx-opacity: 1;
+    -fx-cursor: default;
+}
+.battle-command-row {
+    -fx-background-color: #1c2023;
+    -fx-padding: 8 12;
+    -fx-min-height: 61px;
+    -fx-alignment: center-left;
+}
+.battle-command-row .battle-command-scroll { -fx-min-height: 44px; }
+.battle-command-row .battle-command-bar {
+    -fx-padding: 2 0;
+    -fx-background-color: #1c2023;
+    -fx-border-width: 0;
+    -fx-min-height: 0;
+}
+.battle-root .battle-command-row .battle-primary-button {
+    -fx-background-color: #41311f;
+    -fx-border-color: #c68a3c;
+    -fx-text-fill: #f7dfb8;
+    -fx-font-weight: bold;
+    -fx-min-width: 192px;
+    -fx-min-height: 41px;
+}
+.battle-root .battle-command-row .battle-primary-button:hover {
+    -fx-background-color: #594127;
+    -fx-text-fill: #ffffff;
+}
+.battle-root .battle-command-row .battle-primary-button:disabled {
+    -fx-background-color: #2d2a25;
+    -fx-text-fill: #b1a89b;
+    -fx-border-color: #776247;
+}
+.battle-root .battle-panel .battle-roster-row .label { -fx-text-fill: #e1e5e7; }
+.battle-root .battle-panel .battle-roster-row .battle-roster-id { -fx-text-fill: #a1c9ed; }
+.battle-root .battle-panel .battle-roster-row .battle-roster-health { -fx-text-fill: #d0d8dc; }
+.battle-root .battle-panel .battle-panel-title { -fx-text-fill: #e1e5e7; }
+.battle-root .battle-panel .battle-force-title { -fx-text-fill: #bac5cc; }
+.battle-root .battle-guidance .label { -fx-text-fill: #e4e9eb; }
+.battle-root .battle-guidance .battle-guidance-step { -fx-text-fill: #e2a554; }
+.battle-root .battle-top-bar .button { -fx-min-width: 38px; -fx-min-height: 32px; }
+
+/* UI-05E: enforce readable nested controls using exact JavaFX selectors. */
+.battle-root .battle-command-area .battle-command-row .button,
+.battle-root .battle-top-bar .battle-utility-button {
+    -fx-text-fill: #f1f3f4;
+    -fx-background-color: #2b3236;
+    -fx-border-color: #58646b;
+    -fx-cursor: hand;
+}
+.battle-root .battle-command-area .battle-command-row .button:hover,
+.battle-root .battle-top-bar .battle-utility-button:hover {
+    -fx-background-color: #384249;
+    -fx-border-color: #c68a3c;
+}
+.battle-root .battle-panel .battle-roster-row .label,
+.battle-root .battle-panel .battle-roster-name { -fx-text-fill: #e5e9eb; }
+.battle-root .battle-panel .battle-roster-id { -fx-text-fill: #a1c9ed; }
+.battle-root .battle-panel .battle-roster-health { -fx-text-fill: #d0d8dc; }
+
+/* UI-05I: give the board more room and keep hover information readable. */
+.battle-root .battle-sidebar-scroll { -fx-pref-width: 290px; -fx-min-width: 260px; -fx-max-width: 310px; }
+.battle-root .battle-sidebar { -fx-padding: 8; }
+.battle-root .battle-panel { -fx-padding: 10; }
+.battle-root .battle-hex-info .label { -fx-text-fill: #e5e9eb; }
+.battle-root .battle-hex-info .battle-muted { -fx-text-fill: #aeb8bd; }
+
+/* Map discovery action: high contrast across JavaFX default themes. */
+.skirmish-root .random-map-button,
+.skirmish-root .random-map-button .text {
+    -fx-text-fill: #e5e9eb;
+    -fx-fill: #e5e9eb;
+}
+.skirmish-root .random-map-button:hover {
+    -fx-background-color: #30383d;
+    -fx-border-color: #c68a3c;
+}
