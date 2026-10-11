@@ -55,6 +55,25 @@
 
 (defonce map-pan-origin (atom nil))
 (defonce wheel-last-zoom (atom 0))
+(defonce ^:private static-map-cache (atom nil))
+
+(defn static-map-layer
+  "Cache the terrain Canvas and hex hit-target descriptions until board or
+   layout changes. Hover, selection and phase updates reuse the identical
+   scene descriptions. One-entry cache avoids retaining earlier zoom levels."
+  [tiles layout]
+  (let [old @static-map-cache]
+    (if (and (identical? tiles (:tiles old)) (= layout (:layout old)))
+      (:nodes old)
+      (let [nodes (into [{:fx/type elements/terrain-canvas
+                          :tiles tiles
+                          :layout layout}]
+                        (map (fn [h] {:fx/type elements/hex-hit-target
+                                      :hex h
+                                      :layout layout}) tiles))]
+        (reset! static-map-cache {:tiles tiles :layout layout :nodes nodes})
+        nodes))))
+
 
 (defn game-board
   [{:keys [fx/context]}]
@@ -101,13 +120,7 @@
                :children [{:fx/type :group
                            :on-scroll {:event-type ::events/battle-map-scroll :fx/sync true}
                            :children (concat
-                          [{:fx/type elements/terrain-canvas
-                            :tiles gb
-                            :layout layout}]
-                          (for [h gb]
-                            {:fx/type elements/hex-hit-target
-                             :hex h
-                             :layout layout})
+                          (static-map-layer gb layout)
                           (for [t unit-locations]
                             {:fx/type elements/draw-unit
                              :unit t
