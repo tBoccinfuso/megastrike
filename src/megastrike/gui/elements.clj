@@ -86,51 +86,70 @@
      :y 0}))
 
 ;; Boards
-(defn draw-hex
+(defn terrain-color
+  "The existing minimap terrain palette, shared by the Canvas renderer."
+  [terrain]
+  (let [terrain (str (or terrain ""))]
+    (cond
+      (str/includes? terrain "woods") "rgb(180, 230, 130)"
+      (str/includes? terrain "sinkhole") "rgb(210, 180, 150)"
+      (str/includes? terrain "rough") "rgb(186, 191, 160)"
+      (str/includes? terrain "rubble") "rgb(200, 200, 200)"
+      (str/includes? terrain "water") "rgb(200, 247, 253)"
+      (str/includes? terrain "pavement") "rgb(204, 204, 204)"
+      (str/includes? terrain "road") "rgb(71, 79, 107)"
+      (str/includes? terrain "swamp") "rgb(49, 136, 74)"
+      (str/includes? terrain "building") "rgb(204, 204, 204)"
+      (str/includes? terrain "bridge") "rgb(109, 55, 25)"
+      :else "rgb(215, 211, 156)")))
+
+(defn terrain-canvas
+  "Paint the static board with a single Canvas instead of thousands of polygons
+   and labels. The transparent hit layer retains existing gameplay events."
+  [{:keys [tiles layout]}]
+  (let [scale (double (or (:scale layout) 1.0))
+        entries (mapv (fn [h] {:hex h
+                                :points (vec (hex/points h layout))
+                                :center (hex/hex->pixel h layout)
+                                :offset (hex/hex->offset h)
+                                :paint (javafx.scene.paint.Color/web (terrain-color (:terrain h)))})
+                      tiles)
+        max-x (reduce (fn [m {:keys [points]}] (max m (apply max (take-nth 2 points)))) 0.0 entries)
+        max-y (reduce (fn [m {:keys [points]}] (max m (apply max (take-nth 2 (rest points))))) 0.0 entries)]
+    {:fx/type :canvas
+     :width (+ max-x 4.0)
+     :height (+ max-y 4.0)
+     :draw (fn [^javafx.scene.canvas.Canvas canvas]
+             (let [g (.getGraphicsContext2D canvas)]
+               (.clearRect g 0.0 0.0 (.getWidth canvas) (.getHeight canvas))
+               (.setStroke g javafx.scene.paint.Color/BLACK)
+               (.setLineWidth g 1.0)
+               (doseq [{:keys [hex points paint center offset]} entries]
+                 (let [xs (double-array (take-nth 2 points))
+                       ys (double-array (take-nth 2 (rest points)))]
+                   (.setFill g paint)
+                   (.fillPolygon g xs ys 6)
+                   (.strokePolygon g xs ys 6)
+                   (when (>= scale 0.55)
+                     (.setFill g (javafx.scene.paint.Color/web "#252a2c"))
+                     (.setFont g (javafx.scene.text.Font/font (if (< scale 0.8) 9.0 11.0)))
+                     (.fillText g (format "%02d%02d" (:x offset) (:y offset))
+                                (- (:x center) (* 15 scale)) (- (:y center) (* 3 scale)))
+                     (when (>= scale 0.75)
+                       (.setFont g (javafx.scene.text.Font/font 10.0))
+                       (.fillText g (str "Lvl " (:elevation hex))
+                                  (- (:x center) (* 15 scale)) (+ (:y center) (* 18 scale)))))))))}))
+
+(defn hex-hit-target
+  "One invisible mouse target per hex, preserving the existing deployment,
+   movement, attack and hover handlers while terrain is Canvas-backed."
   [{:keys [hex layout]}]
-  (let [points (hex/points hex layout)
-        offset (hex/hex->offset hex)
-        center (hex/hex->pixel hex layout)
-        scale (double (or (:scale layout) 1.0))
-        {:keys [elevation terrain]} hex
-        ;; Colors below come from data/images/hexes/defaultminimap.txt
-        sprite (cond
-                 (str/includes? terrain "woods") "rgb(180, 230, 130)"
-                 (str/includes? terrain "sinkhole") "rgb(210, 180, 150)"
-                 (str/includes? terrain "rough") "rgb(186, 191, 160)"
-                 (str/includes? terrain "rubble") "rgb(200, 200, 200)"
-                 (str/includes? terrain "water") "rgb(200, 247, 253)"
-                 (str/includes? terrain "pavement") "rgb(204, 204, 204)"
-                 (str/includes? terrain "road") "rgb(71, 79, 107)"
-                 (str/includes? terrain "swamp") "rgb(49, 136, 74)"
-                 (str/includes? terrain "building") "rgb(204, 204, 204)"
-                 (str/includes? terrain "bridge") "rgb(109, 55, 25)"
-                 :else "rgb(215, 211, 156)")]
-    {:fx/type :group
-     :on-mouse-clicked {:event-type ::events/hex-clicked :hex hex :fx/sync true}
-     :on-mouse-entered {:event-type ::events/hex-hovered :hex hex :fx/sync true}
-     :children [{:fx/type :polygon
-                 :points points
-                 :fill sprite
-                 :stroke :black}
-                ;; Draw directly in world coordinates, not as a laid-out Label.
-                ;; Text remains inside each hex and disappears at very low zoom.
-                {:fx/type :text
-                 :visible (>= scale 0.55)
-                 :mouse-transparent true
-                 :text (format "%02d%02d" (:x offset) (:y offset))
-                 :x (- (:x center) (* 15 scale))
-                 :y (- (:y center) (* 3 scale))
-                 :font (if (< scale 0.8) 9 11)
-                 :fill "#252a2c"}
-                {:fx/type :text
-                 :visible (>= scale 0.75)
-                 :mouse-transparent true
-                 :text (str "Lvl " elevation)
-                 :x (- (:x center) (* 15 scale))
-                 :y (+ (:y center) (* 18 scale))
-                 :font 10
-                 :fill "#252a2c"}]}))
+  {:fx/type :polygon
+   :points (hex/points hex layout)
+   :fill :transparent
+   :stroke :transparent
+   :on-mouse-clicked {:event-type ::events/hex-clicked :hex hex :fx/sync true}
+   :on-mouse-entered {:event-type ::events/hex-hovered :hex hex :fx/sync true}})
 
 (defn draw-unit
   [{:keys [fx/context unit layout]}]

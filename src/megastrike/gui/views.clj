@@ -101,8 +101,11 @@
                :children [{:fx/type :group
                            :on-scroll {:event-type ::events/battle-map-scroll :fx/sync true}
                            :children (concat
+                          [{:fx/type elements/terrain-canvas
+                            :tiles gb
+                            :layout layout}]
                           (for [h gb]
-                            {:fx/type elements/draw-hex
+                            {:fx/type elements/hex-hit-target
                              :hex h
                              :layout layout})
                           (for [t unit-locations]

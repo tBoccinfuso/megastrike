@@ -11,6 +11,7 @@
    [megastrike.combat-unit :as cu]
    [megastrike.gui.subs :as subs]
    [megastrike.logs :as logs]
+   [megastrike.movement :as movement]
    [megastrike.phases :as phases]
    [megastrike.scenario :as scenario]
    [megastrike.server.server :as server]
@@ -463,8 +464,19 @@
 ;; Unit selection
 (defmethod event-handler ::stats-clicked
   [{:keys [fx/context unit]}]
-  {:context (fx/swap-context context assoc :gui
-                             (turn-manager/switch-unit (subs/game context) (subs/gui context) unit))})
+  (let [game (subs/game context)
+        gui (subs/gui context)
+        selected (cu/select-unit (:units game) unit)
+        ;; Until Kevin deployment is implemented, local skirmishes allow
+        ;; selecting either force's undeployed units during deployment.
+        deployment? (and (= :deployment (:current-phase game))
+                         (fx/sub-val context :singleplayer?)
+                         selected
+                         (not (:unit/acted? selected)))]
+    {:context (fx/swap-context context assoc :gui
+                               (if deployment?
+                                 (assoc gui :active-unit unit :turn-flag false)
+                                 (turn-manager/switch-unit game gui unit)))}))
 
 (defmethod event-handler ::unit-clicked
   [{:keys [fx/context unit]}]
@@ -557,12 +569,19 @@
 (defmethod event-handler ::deploy-unit
   [{:keys [fx/context]}]
   (let [active-unit (subs/active-unit context)
+        deployed? (and active-unit (movement/deployed? active-unit))
         conn (subs/connection context)
         player (subs/client-player context)]
-    (client/deploy-unit-message conn player active-unit))
-  {:context (fx/swap-context context assoc :game
-                             (turn-manager/deploy-unit (subs/game context)
-                                                       (subs/gui context)))})
+    (if deployed?
+      (let [{:keys [game gui]} (turn-manager/deploy-unit (subs/game context)
+                                                         (subs/gui context))]
+        ;; Singleplayer already updates local state. Sending a second server
+        ;; event currently produces an unhandled event and can overwrite it.
+        (when (and conn (not (fx/sub-val context :singleplayer?)))
+          (client/deploy-unit-message conn player (:unit/id active-unit)))
+        {:context (fx/swap-context context assoc :game game :gui gui)})
+      {:context (fx/swap-context context assoc-in [:gui :deployment-error]
+                                 "Select a unit, then click a hex before deploying.")})))
 
 (defmethod event-handler ::confirm-move
   [{:keys [fx/context]}]
