@@ -167,12 +167,22 @@
 (defn draw-unit
   [{:keys [fx/context unit layout]}]
   (let [hex (hex/points (:unit/location unit) layout)
+        selected? (= (:unit/id unit) (subs/active-id context))
         forces (subs/forces context)
         bf (battle-force/select-force forces (:unit/battle-force unit))]
     {:fx/type :group
      :on-mouse-clicked {:event-type ::events/unit-clicked :unit unit :fx/sync true}
      :on-mouse-entered {:event-type ::events/hex-hovered :hex (:unit/location unit) :fx/sync true}
-     :children [{:fx/type draw-sprite
+     :children (cond-> []
+                 selected?
+                 (conj {:fx/type :polygon
+                        :points hex
+                        :fill :transparent
+                        :stroke (javafx.scene.paint.Color/web "#20c5d8")
+                        :stroke-width 3.0
+                        :mouse-transparent true})
+                 true
+                 (into [{:fx/type draw-sprite
                  :unit unit
                  :bf bf
                  :x (nth hex 8)
@@ -192,7 +202,7 @@
                  :layout-x (nth hex 4)
                  :layout-y (nth hex 5)
                  :font 16
-                 :translate-y (* (/ (* (layout :y-size) (:scale layout)) 3) -2)}]}))
+                 :translate-y (* (/ (* (layout :y-size) (:scale layout)) 3) -2)}]))}))
 
 (defn draw-movement-cost
   [{:keys [origin destination layout cost]}]

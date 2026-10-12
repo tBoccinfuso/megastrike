@@ -139,7 +139,7 @@
   (mu/with-context {:unit-clicked unit :phase current-phase}
     (cond
       (and (in-active-force? unit turn-order) (not (:unit/acted? unit)))
-      {:game (switch-unit game-state gui (:unit/id unit)) :gui gui}
+      {:game game-state :gui (switch-unit game-state gui (:unit/id unit))}
 
       (and (= current-phase :movement) (not (in-active-force? unit turn-order)))
       (charge-unit game-state gui unit)
@@ -207,6 +207,24 @@
                   :path (:unit/path unit))
           (assoc game-state :turn-flag nil)))))
 
+(defn kevin-facing
+  "Choose a final facing from the planned destination toward the nearest opposing unit.
+  If no enemy with a known location exists, retain the current facing."
+  [unit path units layout]
+  (let [destination (or (last (seq path)) (:unit/location unit))
+        enemies (filter #(and (not= (:unit/battle-force %) (:unit/battle-force unit))
+                              (map? (:unit/location %))
+                              (every? number? ((juxt :hex/p :hex/q :hex/r) (:unit/location %))))
+                        units)]
+    (if (and (map? destination)
+             (every? number? ((juxt :hex/p :hex/q :hex/r) destination))
+             (seq enemies))
+      (let [target (apply min-key #(hex/distance destination (:unit/location %)) enemies)]
+        (if (hex/same-hex destination (:unit/location target))
+          (:unit/facing unit)
+          (hex/facing destination (hex/hex->pixel (:unit/location target) layout) layout)))
+      (:unit/facing unit))))
+
 (defn ai-moves
   [{:keys [turn-order units game-board] :as game-state} gui layout]
   (let [unit (->> units
@@ -214,9 +232,11 @@
                   (filter #(not (:unit/acted? %)))
                   (rand-nth))
         move-options (ai/move-options unit units game-board layout)
+        path (:path move-options)
         upd (-> unit
-                (cu/set-path (:path move-options))
-                (assoc :move/selected (if (empty? (:path move-options)) :move/stand-still (:move/default unit))))]
+                (cu/set-path path)
+                (assoc :move/selected (if (empty? path) :move/stand-still (:move/default unit)))
+                (assoc :unit/facing (kevin-facing unit path units layout)))]
     (confirm-move (assoc game-state :units (cu/update-unit units upd))
                   (assoc gui :active-unit (:unit/id upd))
                   layout)))

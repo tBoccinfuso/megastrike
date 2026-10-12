@@ -619,14 +619,26 @@
                                  (assoc gui :active-unit unit :turn-flag false)
                                  (turn-manager/switch-unit game gui unit)))}))
 
+(defn movement-selection-error
+  "Short explanation when a battlefield click cannot select a unit for movement."
+  [game unit]
+  (when (= :movement (:current-phase game))
+    (cond
+      (nil? unit) "That unit is unavailable."
+      (:unit/acted? unit) "That unit has already moved."
+      (not= (:unit/battle-force unit) (first (:turn-order game)))
+      "It's not this unit's movement turn."
+      :else nil)))
+
 (defmethod event-handler ::unit-clicked
   [{:keys [fx/context unit]}]
-  (let [old-state (subs/game context)
-        old-gui (subs/gui context)
-        response (turn-manager/unit-clicked old-state old-gui unit)
-        new-state (:game response)
-        new-gui (:gui response)]
-    {:context (fx/swap-context context assoc :game new-state :gui new-gui)}))
+  (let [game (subs/game context)
+        gui (subs/gui context)
+        problem (movement-selection-error game unit)]
+    (if problem
+      {:context (deployment-error-context context problem)}
+      (let [{new-game :game new-gui :gui} (turn-manager/unit-clicked game gui unit)]
+        {:context (fx/swap-context context assoc :game new-game :gui new-gui)}))))
 
 (defmethod event-handler ::undeploy-unit
   [{:keys [fx/context]}]
