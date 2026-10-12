@@ -61,7 +61,14 @@
     (is (= (count locations) (count (set locations))))
     (is (every? :unit/acted? units))
     (is (every? (fn [unit]
-                  (deployment/eligible-location? original unit (:unit/location unit) 2))
+                  (let [original-unit (first (filter #(= (:unit/id %) (:unit/id unit))
+                                                     (:units original)))]
+                    (deployment/eligible-location? original original-unit
+                                                   (:unit/location unit) 2)))
+                units))
+    ;; After deployment, the same units must not be deployed a second time.
+    (is (every? (fn [unit]
+                  (not (deployment/eligible-location? game unit (:unit/location unit) 2)))
                 units))))
 
 (deftest auto-deploy-not-enough-room
@@ -110,3 +117,41 @@
     (is (= "Deployment is restricted on that terrain."
            (deployment/deployment-reason game unit candidate 2)))
     (is (not (deployment/eligible-location? game unit candidate 2)))))
+
+(deftest explicit-on-board-hex-rows
+  (let [game (assoc (fixture-game) :deployment {:mode :on-board :depth-hexes 2})
+        unit (first (:units game))]
+    (is (= 2 (deployment/deployment-depth game 3)))
+    (is (= 12 (count (deployment/legal-tiles game unit 3))))))
+
+(deftest physical-zone-requires-declared-scale
+  (let [game (assoc (fixture-game) :deployment {:mode :on-board :zone-depth-inches 6})
+        unit (first (:units game))]
+    (is (nil? (deployment/deployment-depth game 3)))
+    (is (empty? (deployment/legal-tiles game unit 3)))
+    (is (= "No valid deployment zone is configured."
+           (deployment/deployment-reason game unit (first (get-in game [:game-board :tiles])) 3)))))
+
+(deftest physical-zone-does-not-extend-beyond-six-inches
+  (let [game (assoc (fixture-game) :deployment {:mode :on-board
+                                               :zone-depth-inches 6
+                                               :row-spacing-inches 2.5})
+        unit (first (:units game))]
+    (is (= 2 (deployment/deployment-depth game 3)))
+    (is (= 12 (count (deployment/legal-tiles game unit 3))))))
+
+(deftest explicit-off-board-is-not-pre-placement
+  (let [game (assoc (fixture-game) :deployment {:mode :off-board})
+        unit (first (:units game))]
+    (is (nil? (deployment/deployment-depth game 3)))
+    (is (empty? (deployment/legal-tiles game unit 3)))))
+
+(deftest scenario-overrides-force-edge
+  (let [game (assoc (fixture-game) :deployment {:mode :on-board
+                                               :depth-hexes 1
+                                               :force-edges {:blue :direction/e}})
+        blue (first (:units game))]
+    (is (= 6 (count (deployment/legal-tiles game blue 3))))
+    (is (= (set (map deployment/location-key
+                     (deployment/zone-tiles (:game-board game) :e 1)))
+           (set (map deployment/location-key (deployment/legal-tiles game blue 3)))))))

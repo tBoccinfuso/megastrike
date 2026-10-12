@@ -46,13 +46,37 @@
                   (map (comp location-key :unit/location))) units))
 
 (defn deployment-depth
-  "Optional scenario-defined number of hex rows. Falls back to the existing
-  three-row skirmish configuration until an explicit map scale is available."
+  "Resolve the scenario's on-board deployment depth in hex rows.
+  Explicit hex rows take precedence. Physical measurements require a declared
+  row spacing; never assume a hex size equals a particular number of inches.
+  The legacy default-depth is maintained only for scenarios without a policy.
+  Returns nil for invalid or unsupported deployment configurations."
   [game default-depth]
-  (let [n (or (get-in game [:deployment :depth-hexes])
-              (:deployment/depth-hexes game)
-              default-depth)]
-    (when (and (integer? n) (pos? n)) n)))
+  (let [policy (:deployment game)
+        mode (:mode policy)
+        explicit? (contains? policy :mode)
+        rows (or (:depth-hexes policy) (:deployment/depth-hexes game))
+        inches (:zone-depth-inches policy)
+        row-inches (:row-spacing-inches policy)]
+    (cond
+      (and explicit? (not= mode :on-board)) nil
+      (some? rows) (when (and (integer? rows) (pos? rows)) rows)
+      (some? inches) (when (and (number? inches) (pos? inches)
+                               (number? row-inches) (pos? row-inches))
+                       ;; Only complete rows that fit entirely in the specified
+                       ;; distance are offered; never extend past the boundary.
+                       (let [n (long (Math/floor (/ (double inches)
+                                                    (double row-inches))))]
+                         (when (pos? n) n)))
+      explicit? nil
+      :else (when (and (integer? default-depth) (pos? default-depth))
+              default-depth))))
+
+(defn force-zone
+  "Use a per-force scenario edge when configured, otherwise the force edge."
+  [game force]
+  (or (get-in game [:deployment :force-edges (:unit-group/keyword force)])
+      (:unit-group/deployment force)))
 
 (defn deployment-reason
   "Return short user-facing explanation, or nil for a permitted tile.
@@ -66,7 +90,7 @@
         terrain (:terrain actual)
         forbidden (set (or (get-in game [:deployment :forbidden-terrain])
                            (:deployment/forbidden-terrain game)))
-        zone (when depth (zone-tiles (:game-board game) (:unit-group/deployment force) depth))]
+        zone (when depth (zone-tiles (:game-board game) (force-zone game force) depth))]
     (cond
       (nil? unit) "Select a unit first."
       (:unit/acted? unit) "This unit is already deployed."
@@ -86,7 +110,7 @@
         force (some #(when (= (:unit-group/keyword %) (:unit/battle-force unit)) %) (:forces game))]
     (if (and unit force depth)
       (into [] (remove #(deployment-reason game unit % default-depth))
-            (zone-tiles (:game-board game) (:unit-group/deployment force) depth))
+            (zone-tiles (:game-board game) (force-zone game force) depth))
       [])))
 
 (defn eligible-location? [game unit tile depth]
