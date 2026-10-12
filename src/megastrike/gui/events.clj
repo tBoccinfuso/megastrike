@@ -10,6 +10,7 @@
    [megastrike.client :as client]
    [megastrike.combat-unit :as cu]
    [megastrike.deployment :as deployment]
+   [megastrike.strategic-deployment :as strategic-deployment]
    [megastrike.gui.subs :as subs]
    [megastrike.logs :as logs]
    [megastrike.movement :as movement]
@@ -44,6 +45,9 @@
           :keys (keys event)))
 
 (declare default-skirmish-forces)
+
+;; Shared skirmish deployment-zone depth. Keep before all event handlers.
+(def deployment-zone-depth 3)
 
 ;; Main menu navigation
 (defmethod event-handler ::start-singleplayer
@@ -199,15 +203,23 @@
 
 (defmethod event-handler ::battle-ready
   [{:keys [fx/context game]}]
-  (when (fx/sub-val context :singleplayer?)
-    (reset! server/game-state game))
-  {:context (fx/swap-context context
-                             (fn [state]
-                               (-> state
-                                   (assoc :game game :app-phase :game)
-                                   (assoc-in [:gui :layout :scale] 0.65)
-                                   (assoc-in [:lobby :skirmish-launch-error] nil))))
-   :dispatch {:event-type ::open-round-dialog}})
+  (let [auto? (and (fx/sub-val context :singleplayer?)
+                   (true? (fx/sub-val context get-in [:lobby :options :smart-auto-deploy])))
+        result (when auto? (strategic-deployment/auto-deploy-from-initiative game deployment-zone-depth))
+        next-game (if result (:game result) game)
+        problem (when (and result (seq (:unplaced result)))
+                  (str "Could not automatically place " (count (:unplaced result))
+                       " units. Complete deployment manually."))]
+    (when (fx/sub-val context :singleplayer?)
+      (reset! server/game-state next-game))
+    {:context (fx/swap-context context
+                               (fn [state]
+                                 (-> state
+                                     (assoc :game next-game :app-phase :game)
+                                     (assoc-in [:gui :layout :scale] 0.65)
+                                     (assoc-in [:gui :deployment-error] problem)
+                                     (assoc-in [:lobby :skirmish-launch-error] nil))))
+     :dispatch {:event-type ::open-round-dialog}}))
 
 (defmethod event-handler ::battle-load-failed
   [{:keys [fx/context message]}]
@@ -393,8 +405,6 @@
       (reset! last-hex-hover-update now)
       {:context (fx/swap-context context assoc-in [:gui :hovered-hex] hex)})))
 
-(def deployment-zone-depth 3)
-
 (defn deployment-placement-result
   "Validate a hex before the normal placement handler stages a location."
   [game unit hex]
@@ -510,6 +520,9 @@
         deployment? (and (= :deployment (:current-phase game))
                          (fx/sub-val context :singleplayer?)
                          selected
+                         (= :local-player (:unit-group/player
+                                          (some #(when (= (:unit-group/keyword %) (:unit/battle-force selected)) %)
+                                                (:forces game))))
                          (not (:unit/acted? selected)))]
     {:context (fx/swap-context context assoc :gui
                                (if deployment?
@@ -595,6 +608,8 @@
 
 ;; Server Events
 
+(declare advance-kevin-deployment)
+
 (defmethod event-handler ::next-phase
   [{:keys [fx/context]}]
   (let [game (subs/game context)
@@ -605,13 +620,16 @@
                    (true? (fx/sub-val context get-in [:lobby :options :smart-auto-deploy]))
                    (= :initiative (:current-phase game))
                    (= :deployment (:current-phase phase-game)))
-        result (when auto? (deployment/auto-deploy phase-game deployment-zone-depth))
-        next-game (if (and result (empty? (:unplaced result)))
-                    (phases/next-phase (:game result))
-                    (or (:game result) phase-game))
-        problem (when (seq (:unplaced result))
-                  (str "Unable to automatically place " (count (:unplaced result))
-                       " units. Use manual deployment for the remaining units."))]
+        result (when auto? (strategic-deployment/auto-deploy-from-initiative game deployment-zone-depth))
+        pre-kevin-game (if result (:game result) phase-game)
+        kevin (when (and (fx/sub-val context :singleplayer?) (not auto?))
+                (advance-kevin-deployment pre-kevin-game true))
+        next-game (if kevin (:game kevin) pre-kevin-game)
+        problem (cond
+                  (and result (seq (:unplaced result)))
+                  (str "Could not automatically place " (count (:unplaced result))
+                       " units. Complete deployment manually.")
+                  (:blocked? kevin) "Kevin could not find a legal deployment hex. Review deployment zones and space.")]
     {:context (fx/swap-context context (fn [state]
                  (-> state
                      (assoc :game next-game :gui phase-gui)
@@ -619,24 +637,41 @@
      :dispatch {:event-type ::open-round-dialog}}))
 
 ;; Deployment Phase
+(defn advance-kevin-deployment [game singleplayer?]
+  (if singleplayer?
+    (strategic-deployment/auto-deploy-kevin-turns game deployment-zone-depth)
+    {:game game :blocked? false}))
+
 (defmethod event-handler ::deploy-unit
   [{:keys [fx/context]}]
   (let [game (subs/game context)
         active-unit (subs/active-unit context)
         location (:unit/location active-unit)
         staged? (and active-unit (movement/deployed? active-unit))
+        force (some #(when (= (:unit/battle-force active-unit) (:unit-group/keyword %)) %) (:forces game))
+        player-controlled? (and (fx/sub-val context :singleplayer?)
+                                (= :deployment (:current-phase game)))
         problem (cond
+                  (and player-controlled? (not= :local-player (:unit-group/player force)))
+                  "Kevin deploys his own units automatically. Select a unit from your force."
+                  (and player-controlled? (not= (:unit/battle-force active-unit) (first (:turn-order game))))
+                  "Wait for your force's deployment turn."
                   (not staged?) "Select a unit, then click a highlighted deployment hex."
                   :else (deployment-placement-result game active-unit location))
         conn (subs/connection context)
         player (subs/client-player context)]
     (if problem
       {:context (fx/swap-context context assoc-in [:gui :deployment-error] problem)}
-      (let [{:keys [game gui]} (turn-manager/deploy-unit game (subs/gui context))]
+      (let [{:keys [game gui]} (turn-manager/deploy-unit game (subs/gui context))
+            kevin (advance-kevin-deployment game (fx/sub-val context :singleplayer?))
+            game (:game kevin)
+            gui (assoc gui :deployment-error
+                       (when (:blocked? kevin)
+                         "Kevin could not find a legal deployment hex. Review deployment zones and space."))]
         (when (and conn (not (fx/sub-val context :singleplayer?)))
           (client/deploy-unit-message conn player (:unit/id active-unit)))
         {:context (fx/swap-context context assoc :game game
-                                   :gui (assoc gui :deployment-error nil))}))))
+                                   :gui gui)}))))
 
 (defmethod event-handler ::confirm-move
   [{:keys [fx/context]}]
