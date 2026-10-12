@@ -9,6 +9,7 @@
    [megastrike.board :as board]
    [megastrike.client :as client]
    [megastrike.combat-unit :as cu]
+   [megastrike.deployment :as deployment]
    [megastrike.gui.subs :as subs]
    [megastrike.logs :as logs]
    [megastrike.movement :as movement]
@@ -135,6 +136,10 @@
                                          (assoc-in [:lobby :map-boards] mapsheets)
                                          (assoc-in [:lobby :skirmish-launch-error] nil))))}))))
 
+(defmethod event-handler ::set-skirmish-option
+  [{:keys [fx/context option fx/event]}]
+  {:context (fx/swap-context context assoc-in [:lobby :options option] (boolean event))})
+
 (defmethod event-handler ::filter-changed
   [{:keys [fx/context values]}]
   {:context (fx/swap-context context
@@ -168,13 +173,25 @@
 (defmethod event-handler ::launch-game
   [{:keys [fx/context]}]
   (let [game (subs/game context)
-        selected-boards (vec (or (subs/map-boards context) []))
-        error (skirmish-launch-error game selected-boards)]
+        random? (true? (fx/sub-val context get-in [:lobby :options :random-map]))
+        width (positive-board-count (:map-width game))
+        height (positive-board-count (:map-height game))
+        choices (when random? (available-mapboards))
+        selected-boards (if (and random? width height (seq choices))
+                          (mapv #(board/create-mapsheet (.getPath ^java.io.File %))
+                                (take (* width height) (cycle (shuffle choices))))
+                          (vec (or (subs/map-boards context) [])))
+        error (if (and random? (empty? choices))
+                "No .board files found for Random Map."
+                (skirmish-launch-error game selected-boards))]
     (if error
       {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error] error)}
       (let [width (positive-board-count (:map-width game))
             height (positive-board-count (:map-height game))]
-        {:context (fx/swap-context context assoc :app-phase :battle-loading)
+        {:context (fx/swap-context context
+                                   (fn [state] (-> state
+                                                   (assoc :app-phase :battle-loading)
+                                                   (assoc-in [:lobby :map-boards] selected-boards))))
          :prepare-battle {:game game
                           :boards selected-boards
                           :width width
@@ -376,15 +393,36 @@
       (reset! last-hex-hover-update now)
       {:context (fx/swap-context context assoc-in [:gui :hovered-hex] hex)})))
 
+(def deployment-zone-depth 3)
+
+(defn deployment-placement-result
+  "Validate a hex before the normal placement handler stages a location."
+  [game unit hex]
+  (cond
+    (nil? unit) "Select an undeployed unit from the roster first."
+    (:unit/acted? unit) "That unit has already deployed."
+    (not (deployment/eligible-location? game unit hex deployment-zone-depth))
+    "Choose an unoccupied hex in this force's highlighted deployment zone."
+    :else nil))
+
 (defmethod event-handler ::hex-clicked
   [{:keys [fx/context hex fx/event]}]
   (let [e ^MouseEvent event
         click-location {:x (.getX e) :y (.getY e)}
-        active-unit (subs/active-id context)]
-    {:context (fx/swap-context context assoc :game
-                               (turn-manager/hex-clicked (subs/game context)
-                                                         (subs/layout context)
-                                                         hex click-location active-unit))}))
+        active-id (subs/active-id context)
+        game (subs/game context)
+        unit (cu/select-unit (:units game) active-id)
+        problem (when (= :deployment (:current-phase game))
+                  (deployment-placement-result game unit hex))]
+    (if problem
+      {:context (fx/swap-context context assoc-in [:gui :deployment-error] problem)}
+      {:context (fx/swap-context context
+                                 (fn [state]
+                                   (-> state
+                                       (assoc-in [:gui :deployment-error] nil)
+                                       (assoc :game (turn-manager/hex-clicked game
+                                                                              (subs/layout context)
+                                                                              hex click-location active-id)))))})))
 
 (defmethod event-handler ::text-input
   [{:keys [fx/context ks fx/event]}]
@@ -559,29 +597,46 @@
 
 (defmethod event-handler ::next-phase
   [{:keys [fx/context]}]
-  {:context (fx/swap-context context assoc :game
-                             (turn-manager/advance-turn (subs/game context)
-                                                        (subs/gui context)
-                                                        (subs/layout context)))
-   :dispatch {:event-type ::open-round-dialog}})
+  (let [game (subs/game context)
+        advanced (turn-manager/advance-turn game (subs/gui context) (subs/layout context))
+        phase-game (or (:game advanced) advanced)
+        phase-gui (or (:gui advanced) (subs/gui context))
+        auto? (and (fx/sub-val context :singleplayer?)
+                   (true? (fx/sub-val context get-in [:lobby :options :smart-auto-deploy]))
+                   (= :initiative (:current-phase game))
+                   (= :deployment (:current-phase phase-game)))
+        result (when auto? (deployment/auto-deploy phase-game deployment-zone-depth))
+        next-game (if (and result (empty? (:unplaced result)))
+                    (phases/next-phase (:game result))
+                    (or (:game result) phase-game))
+        problem (when (seq (:unplaced result))
+                  (str "Unable to automatically place " (count (:unplaced result))
+                       " units. Use manual deployment for the remaining units."))]
+    {:context (fx/swap-context context (fn [state]
+                 (-> state
+                     (assoc :game next-game :gui phase-gui)
+                     (assoc-in [:gui :deployment-error] problem))))
+     :dispatch {:event-type ::open-round-dialog}}))
 
 ;; Deployment Phase
 (defmethod event-handler ::deploy-unit
   [{:keys [fx/context]}]
-  (let [active-unit (subs/active-unit context)
-        deployed? (and active-unit (movement/deployed? active-unit))
+  (let [game (subs/game context)
+        active-unit (subs/active-unit context)
+        location (:unit/location active-unit)
+        staged? (and active-unit (movement/deployed? active-unit))
+        problem (cond
+                  (not staged?) "Select a unit, then click a highlighted deployment hex."
+                  :else (deployment-placement-result game active-unit location))
         conn (subs/connection context)
         player (subs/client-player context)]
-    (if deployed?
-      (let [{:keys [game gui]} (turn-manager/deploy-unit (subs/game context)
-                                                         (subs/gui context))]
-        ;; Singleplayer already updates local state. Sending a second server
-        ;; event currently produces an unhandled event and can overwrite it.
+    (if problem
+      {:context (fx/swap-context context assoc-in [:gui :deployment-error] problem)}
+      (let [{:keys [game gui]} (turn-manager/deploy-unit game (subs/gui context))]
         (when (and conn (not (fx/sub-val context :singleplayer?)))
           (client/deploy-unit-message conn player (:unit/id active-unit)))
-        {:context (fx/swap-context context assoc :game game :gui gui)})
-      {:context (fx/swap-context context assoc-in [:gui :deployment-error]
-                                 "Select a unit, then click a hex before deploying.")})))
+        {:context (fx/swap-context context assoc :game game
+                                   :gui (assoc gui :deployment-error nil))}))))
 
 (defmethod event-handler ::confirm-move
   [{:keys [fx/context]}]

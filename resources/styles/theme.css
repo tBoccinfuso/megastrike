@@ -373,3 +373,16 @@
     -fx-background-color: #30383d;
     -fx-border-color: #c68a3c;
 }
+
+/* Singleplayer setup choices */
+.skirmish-root .check-box { -fx-text-fill: #e5e9eb; -fx-cursor: hand; }
+.skirmish-root .check-box .text { -fx-fill: #e5e9eb; }
+.skirmish-root .check-box .box {
+    -fx-background-color: #202426;
+    -fx-border-color: #7b858b;
+    -fx-border-width: 1;
+    -fx-background-radius: 2;
+    -fx-border-radius: 2;
+}
+.skirmish-root .check-box:selected .box { -fx-border-color: #c68a3c; -fx-background-color: #34312a; }
+.skirmish-root .check-box:selected .mark { -fx-background-color: #e5e9eb; }

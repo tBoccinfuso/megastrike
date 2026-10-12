@@ -8,6 +8,7 @@
    [megastrike.gui.lobby.skirmish :as skirmish]
    [megastrike.gui.subs :as subs]
    [megastrike.battle-force :as battle-force]
+   [megastrike.deployment :as deployment]
    [megastrike.movement :as movement]
    [megastrike.hexagons.hex :as hex])
   (:import
@@ -81,7 +82,12 @@
         layout (subs/layout context)
         units (subs/units context)
         unit-locations (filter movement/deployed? units)
-        destinations (filter #(pos? (count (:unit/path %))) (subs/units context))]
+        destinations (filter #(pos? (count (:unit/path %))) (subs/units context))
+        game (subs/game context)
+        active (subs/active-unit context)
+        legal (when (and (= :deployment (:current-phase game)) active
+                         (not (:unit/acted? active)))
+                (deployment/legal-tiles game active events/deployment-zone-depth))]
     {:fx/type :scroll-pane
      :style-class ["battle-map-scroll"]
      :focus-traversable true
@@ -121,6 +127,13 @@
                            :on-scroll {:event-type ::events/battle-map-scroll :fx/sync true}
                            :children (concat
                           (static-map-layer gb layout)
+                          (for [h legal]
+                            {:fx/type :polygon
+                             :points (hex/points h layout)
+                             :fill (javafx.scene.paint.Color/web "#20c5d8" 0.30)
+                             :stroke (javafx.scene.paint.Color/web "#e6fcff" 0.95)
+                             :stroke-width 2.0
+                             :mouse-transparent true})
                           (for [t unit-locations]
                             {:fx/type elements/draw-unit
                              :unit t
@@ -251,6 +264,7 @@
         unit (subs/active-unit context)
         turn-order (subs/turn-order context)
         [step message] (phase-guidance phase (boolean unit))
+        error (fx/sub-val context get-in [:gui :deployment-error])
         phase-buttons (cond
                         (= phase :deployment) (elements/deploy-buttons (empty? turn-order))
                         (= phase :movement) (if unit (elements/move-buttons unit) [])
@@ -272,7 +286,11 @@
                  :spacing 12
                  :style-class ["battle-guidance"]
                  :children [{:fx/type :label :text step :style-class ["battle-guidance-step"]}
-                            {:fx/type :label :text message :wrap-text true :style-class ["battle-guidance-message"]}]}
+                            {:fx/type :label :text (if (and (= phase :deployment) (seq error)) error message)
+                             :wrap-text true
+                             :style (if (and (= phase :deployment) (seq error))
+                                      "-fx-text-fill: #ffb6a6;" "-fx-text-fill: #e2e4e6;")
+                             :style-class ["battle-guidance-message"]}]}
                 {:fx/type :h-box
                  :alignment :center-left
                  :spacing 8

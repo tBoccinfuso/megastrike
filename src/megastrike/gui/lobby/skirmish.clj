@@ -129,10 +129,17 @@
                :children [{:fx/type board-selector}
                           {:fx/type :button :cursor :hand :text "LOAD SCENARIO"
                            :on-action {:event-type ::events/load-scenario :fx/sync true}}]}
-              {:fx/type :button :text "RANDOM MAP" :cursor :hand
-               :style-class ["skirmish-action-button" "random-map-button"]
-               :style "-fx-background-color: #202426; -fx-text-fill: #e5e9eb; -fx-border-color: #626c72; -fx-padding: 10 20 10 20;"
-               :on-action {:event-type ::events/randomize-mapboards}}
+              {:fx/type :h-box :alignment :center-left :spacing 22
+               :children [{:fx/type :check-box
+                           :text "Random Map"
+                           :selected (true? (fx/sub-val context get-in [:lobby :options :random-map]))
+                           :style "-fx-text-fill: #e5e9eb; -fx-font-size: 13px; -fx-cursor: hand;"
+                           :on-selected-changed {:event-type ::events/set-skirmish-option :option :random-map}}
+                          {:fx/type :check-box
+                           :text "Smart Auto Deploy (Both Forces)"
+                           :selected (true? (fx/sub-val context get-in [:lobby :options :smart-auto-deploy]))
+                           :style "-fx-text-fill: #e5e9eb; -fx-font-size: 13px; -fx-cursor: hand;"
+                           :on-selected-changed {:event-type ::events/set-skirmish-option :option :smart-auto-deploy}}]}
               {:fx/type :label :text (or (fx/sub-val context get-in [:lobby :skirmish-launch-error]) "")
                :style-class ["skirmish-error"]}
               {:fx/type :h-box :alignment :center-right
