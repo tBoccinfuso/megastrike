@@ -70,3 +70,12 @@
     (is (:blocked? result))
     (is (= [:red :blue] (:turn-order (:game result))))
     (is (not (deployment/deployed? (second (:units (:game result))))))))
+
+(deftest auto-deployment-respects-initiative-choice-and-facing
+  (let [game (assoc (fixture 8) :deployment {:initiative-winner-places :first})
+        result (strategic/auto-deploy-from-initiative game 2)
+        units (get-in result [:game :units])]
+    (is (:advanced? result))
+    (is (= :red (:force (first (:placements result)))))
+    (is (= :direction/s (:unit/facing (first units))))
+    (is (= :direction/n (:unit/facing (second units))))))

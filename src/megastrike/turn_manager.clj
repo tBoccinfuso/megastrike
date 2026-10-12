@@ -96,7 +96,8 @@
 
 (defn undeploy-unit
   [game-state active-unit]
-  (update-units game-state [{:unit/id active-unit :unit/location {}}]))
+  ;; Replace the location directly. Deep-merging an empty map would retain hex coords.
+  (update game-state :units cu/update-unit active-unit :unit/location {}))
 
 (defn in-active-force?
   [unit turn-order]

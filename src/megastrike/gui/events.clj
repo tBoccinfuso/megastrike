@@ -11,6 +11,7 @@
    [megastrike.combat-unit :as cu]
    [megastrike.deployment :as deployment]
    [megastrike.strategic-deployment :as strategic-deployment]
+   [megastrike.skirmish-pv :as skirmish-pv]
    [megastrike.gui.subs :as subs]
    [megastrike.logs :as logs]
    [megastrike.movement :as movement]
@@ -176,6 +177,10 @@
                                          (assoc-in [:lobby :map-boards] mapsheets)
                                          (assoc-in [:lobby :skirmish-launch-error] nil))))}))))
 
+(defmethod event-handler ::toggle-skirmish-advanced
+  [{:keys [fx/context]}]
+  {:context (fx/swap-context context update-in [:lobby :options :advanced-expanded] not)})
+
 (defmethod event-handler ::set-skirmish-option
   [{:keys [fx/context option fx/event]}]
   {:context (fx/swap-context context assoc-in [:lobby :options option] (boolean event))})
@@ -221,9 +226,15 @@
                           (mapv #(board/create-mapsheet (.getPath ^java.io.File %))
                                 (take (* width height) (cycle (shuffle choices))))
                           (vec (or (subs/map-boards context) [])))
-        error (if (and random? (empty? choices))
-                "No .board files found for Random Map."
-                (skirmish-launch-error game selected-boards))]
+        pv-bracket (fx/sub-val context get-in [:lobby :options :pv-bracket])
+        totals (mapv (fn [force]
+                       (reduce + (map cu/pv (filter #(= (:unit/battle-force %) (:unit-group/keyword force)) (:units game)))))
+                     (:forces game))
+        pv-error (when (= 2 (count totals))
+                   (skirmish-pv/validation-message pv-bracket (first totals) (second totals)))
+        error (or (when (and random? (empty? choices)) "No .board files found for Random Map.")
+                  (skirmish-launch-error game selected-boards)
+                  pv-error)]
     (if error
       {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error] error)}
       (let [width (positive-board-count (:map-width game))
@@ -371,6 +382,51 @@
       {:context (fx/swap-context context update-in [:game :units]
                                 (fn [units] (cu/->combat-unit {:units units :mul-unit selected
                                                                :pilot pilot :battle-force force-id})))})))
+
+(defmethod event-handler ::skirmish-pv-selection
+  [{:keys [fx/context fx/event]}]
+  (let [bracket (case event
+                  "Introductory: 150–200 PV" :intro
+                  "Standard: 250–350 PV" :standard
+                  "Large: 400+ PV" :large
+                  nil)]
+    {:context (fx/swap-context context assoc-in [:lobby :options :pv-bracket] bracket)}))
+
+(defmethod event-handler ::generate-skirmish-forces
+  [{:keys [fx/context]}]
+  (let [bracket (fx/sub-val context get-in [:lobby :options :pv-bracket])
+        mechs-only? (true? (fx/sub-val context get-in [:lobby :options :mechs-only]))
+        forces (vec (subs/forces context))]
+    (cond
+      (not (contains? skirmish-pv/brackets bracket))
+      {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error]
+                                 "Choose a PV bracket before generating forces.")}
+      (not= 2 (count forces))
+      {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error]
+                                 "A skirmish requires two forces.")}
+      :else
+      (let [rosters (mapv (fn [_] (skirmish-pv/random-roster cu/mul bracket mechs-only?)) forces)]
+        (if (some nil? rosters)
+          {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error]
+                                     "Could not assemble both forces in this PV range. Try another bracket.")}
+          (try
+            (let [generated (reduce (fn [units [force roster]]
+                                      (reduce (fn [acc mul-unit]
+                                                (cu/->combat-unit {:units acc
+                                                                   :mul-unit mul-unit
+                                                                   :pilot {:pilot/full-name "Pilot"
+                                                                           :pilot/skill 4 :pilot/kills 0}
+                                                                   :battle-force (:unit-group/keyword force)}))
+                                              units roster))
+                                    [] (map vector forces rosters))]
+              {:context (fx/swap-context context (fn [state]
+                                                   (-> state
+                                                       (assoc-in [:game :units] generated)
+                                                       (assoc-in [:lobby :skirmish-selected] {})
+                                                       (assoc-in [:lobby :skirmish-launch-error] nil))))})
+            (catch Exception _
+              {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error]
+                                         "A selected unit could not be loaded. Try generating again.")})))))))
 
 (defmethod event-handler ::skirmish-open-unit-dialog
   [{:keys [fx/context force-id]}]
@@ -574,15 +630,32 @@
 
 (defmethod event-handler ::undeploy-unit
   [{:keys [fx/context]}]
-  {:context (fx/swap-context context assoc :game
-                             (turn-manager/undeploy-unit (subs/game context)
-                                                         (subs/gui context)))})
+  (let [unit (subs/active-unit context)]
+    (cond
+      (nil? unit) {:context (deployment-error-context context "Select a unit to undeploy.")}
+      (:unit/acted? unit) {:context (deployment-error-context context "This unit has already deployed.")}
+      (not= :deployment (:current-phase (subs/game context)))
+      {:context (deployment-error-context context "Undeploy is only available during deployment.")}
+      :else {:context (fx/swap-context context assoc :game
+                                       (turn-manager/undeploy-unit (subs/game context)
+                                                                   (:unit/id unit)))})))
 
 ;; Movement Phase
 
+(def facing-clockwise [:direction/n :direction/ne :direction/se :direction/s :direction/sw :direction/nw])
+
+(defn next-facing [facing]
+  (let [idx (.indexOf facing-clockwise facing)]
+    (nth facing-clockwise (mod (inc idx) (count facing-clockwise)))))
+
 (defmethod event-handler ::turn-button-clicked
   [{:keys [fx/context]}]
-  {:context (fx/swap-context context update-in [:game :turn-flag] not)})
+  (if-let [unit (subs/active-unit context)]
+    {:context (fx/swap-context context update-in [:game :units]
+                               (fn [units]
+                                 (cu/update-unit units (:unit/id unit) :unit/facing
+                                                 (next-facing (:unit/facing unit)))))}
+    {:context (deployment-error-context context "Select a unit to turn.")}))
 
 (defmethod event-handler ::set-movement-mode
   [{:keys [fx/context unit mode]}]

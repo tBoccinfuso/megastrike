@@ -2,14 +2,24 @@
   "Phase transitions for optional on-board automatic placement. This uses the
   current skirmish zone/occupancy validator, not complete Alpha Strike legality."
   (:require [megastrike.deployment :as deployment]
+            [megastrike.deployment-setup :as setup]
             [megastrike.deployment-planner :as planner]
             [megastrike.phases :as phases]))
 
 (defn initiative-order [game]
-  ;; Ascending initiative is the existing game's deployment ordering convention.
-  ;; The quick-start optional placement rule additionally gives the winner the
-  ;; choice of first or second; the current skirmish mode has no such UI yet.
-  (mapv :unit-group/keyword (sort-by (juxt :initiative :unit-group/keyword) (:forces game))))
+  (setup/force-order game))
+
+(defn- face-placed-units [game placements]
+  (let [placed-ids (set (map :unit placements))]
+    (update game :units
+            (fn [units]
+              (mapv (fn [unit]
+                      (if (contains? placed-ids (:unit/id unit))
+                        (if-let [facing (setup/auto-facing game unit)]
+                          (assoc unit :unit/facing facing)
+                          unit)
+                        unit))
+                    units)))))
 
 (defn auto-deploy-from-initiative [game depth]
   (if (not= :initiative (:current-phase game))
@@ -18,10 +28,11 @@
           result (planner/plan deployment-game
                                {:force-order (initiative-order deployment-game)
                                 :legal-tiles-fn #(deployment/legal-tiles %1 %2 depth)})
+          placed-game (face-placed-units (:game result) (:placements result))
           done? (and (empty? (:unplaced result))
-                     (every? deployment/deployed? (:units (:game result))))]
+                     (every? deployment/deployed? (:units placed-game)))]
       (assoc result
-             :game (if done? (phases/next-phase (:game result)) (:game result))
+             :game (if done? (phases/next-phase placed-game) placed-game)
              :advanced? done?))))
 
 (defn auto-deploy-kevin-turns
@@ -45,5 +56,5 @@
                                                                 (deployment/legal-tiles g u depth))}))
               placement (first (:placements result))]
           (if placement
-            (recur (update (:game result) :turn-order rest) (conj placed placement))
+            (recur (update (face-placed-units (:game result) [placement]) :turn-order rest) (conj placed placement))
             {:game current :placements placed :blocked? true}))))))

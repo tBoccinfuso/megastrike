@@ -140,6 +140,39 @@
                            :selected (true? (fx/sub-val context get-in [:lobby :options :smart-auto-deploy]))
                            :style "-fx-text-fill: #e5e9eb; -fx-font-size: 13px; -fx-cursor: hand;"
                            :on-selected-changed {:event-type ::events/set-skirmish-option :option :smart-auto-deploy}}]}
+              {:fx/type :v-box
+               :spacing 8
+               :children (cond-> [{:fx/type :button
+                                   :text (if (true? (fx/sub-val context get-in [:lobby :options :advanced-expanded]))
+                                           "HIDE ADVANCED OPTIONS & FORCE GENERATION"
+                                           "SHOW ADVANCED OPTIONS & FORCE GENERATION")
+                                   :on-action {:event-type ::events/toggle-skirmish-advanced}}]
+                           (true? (fx/sub-val context get-in [:lobby :options :advanced-expanded]))
+                           (conj {:fx/type :v-box :spacing 12
+                                  :style "-fx-padding: 12; -fx-background-color: #202426;"
+                                  :children [{:fx/type :label
+                                     :text "PV presets apply to both forces. These are MegaStrike game-size presets, not mandatory Alpha Strike limits."
+                                     :wrap-text true :style-class ["muted-label"]}
+                                    {:fx/type :h-box :spacing 10 :alignment :center-left
+                                     :children [{:fx/type :label :text "POINT VALUE" :style-class ["muted-label"]}
+                                                {:fx/type :combo-box
+                                                 :items ["No PV limit" "Introductory: 150–200 PV" "Standard: 250–350 PV" "Large: 400+ PV"]
+                                                 :value (case (fx/sub-val context get-in [:lobby :options :pv-bracket])
+                                                          :intro "Introductory: 150–200 PV"
+                                                          :standard "Standard: 250–350 PV"
+                                                          :large "Large: 400+ PV"
+                                                          "No PV limit")
+                                                 :pref-width 270
+                                                 :on-value-changed {:event-type ::events/skirmish-pv-selection}}]}
+                                    {:fx/type :h-box :spacing 15 :alignment :center-left
+                                     :children [{:fx/type :check-box :text "BattleMechs only"
+                                                 :selected (true? (fx/sub-val context get-in [:lobby :options :mechs-only]))
+                                                 :on-selected-changed {:event-type ::events/set-skirmish-option :option :mechs-only}}
+                                                {:fx/type :button :text "GENERATE BOTH FORCES"
+                                                 :on-action {:event-type ::events/generate-skirmish-forces}}]}
+                                    {:fx/type :label
+                                     :text "Generation replaces both rosters. Pilots use Skill 4."
+                                     :style-class ["muted-label"]}]}))}
               {:fx/type :label :text (or (fx/sub-val context get-in [:lobby :skirmish-launch-error]) "")
                :style-class ["skirmish-error"]}
               {:fx/type :h-box :alignment :center-right
