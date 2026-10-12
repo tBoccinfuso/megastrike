@@ -1,6 +1,6 @@
 (ns megastrike.deployment
-  "Pure deployment-zone and occupancy checks shared by manual and AI placement.
-  This module intentionally does not impose terrain or unit-type restrictions yet."
+  "Shared deployment validation for manual and automated placement.
+  Advanced movement and terrain rules require verified scenario/unit metadata."
   (:require [megastrike.hexagons.hex :as hex]))
 
 (defn location-key [tile]
@@ -45,16 +45,48 @@
                   (filter deployed?)
                   (map (comp location-key :unit/location))) units))
 
+(defn deployment-depth
+  "Optional scenario-defined number of hex rows. Falls back to the existing
+  three-row skirmish configuration until an explicit map scale is available."
+  [game default-depth]
+  (let [n (or (get-in game [:deployment :depth-hexes])
+              (:deployment/depth-hexes game)
+              default-depth)]
+    (when (and (integer? n) (pos? n)) n)))
+
+(defn deployment-reason
+  "Return short user-facing explanation, or nil for a permitted tile.
+  Explicit :deployment/blocked? tile and :deployment/forbidden-terrain values
+  are scenario/map metadata. No speculative terrain-to-unit rules are inferred."
+  [game unit tile default-depth]
+  (let [depth (deployment-depth game default-depth)
+        force (some #(when (= (:unit-group/keyword %) (:unit/battle-force unit)) %) (:forces game))
+        actual (first (filter #(= (location-key %) (location-key tile))
+                              (get-in game [:game-board :tiles])))
+        terrain (:terrain actual)
+        forbidden (set (or (get-in game [:deployment :forbidden-terrain])
+                           (:deployment/forbidden-terrain game)))
+        zone (when depth (zone-tiles (:game-board game) (:unit-group/deployment force) depth))]
+    (cond
+      (nil? unit) "Select a unit first."
+      (:unit/acted? unit) "This unit is already deployed."
+      (nil? actual) "Choose a hex on the map."
+      (or (nil? force) (nil? depth) (empty? zone)) "No valid deployment zone is configured."
+      (not (some #(= (location-key %) (location-key actual)) zone)) "Outside your deployment zone."
+      (contains? (occupied-locations (:units game) (:unit/id unit)) (location-key actual))
+      "That hex is occupied."
+      (:deployment/blocked? actual) "Deployment is blocked on that hex."
+      (contains? forbidden terrain) "Deployment is restricted on that terrain."
+      :else nil)))
+
 (defn legal-tiles
-  "Return unoccupied board tiles inside the force's deployment zone.
-  This is a geometry/occupancy filter, NOT a complete rules validator."
-  [game unit depth]
-  (let [force (some #(when (= (:unit-group/keyword %) (:unit/battle-force unit)) %) (:forces game))
-        zone (:unit-group/deployment force)
-        occupied (occupied-locations (:units game) (:unit/id unit))]
-    (if (and force unit (pos-int? depth))
-      (into [] (remove #(contains? occupied (location-key %)))
-            (zone-tiles (:game-board game) zone depth))
+  "Return only tiles allowed by the shared deployment validation."
+  [game unit default-depth]
+  (let [depth (deployment-depth game default-depth)
+        force (some #(when (= (:unit-group/keyword %) (:unit/battle-force unit)) %) (:forces game))]
+    (if (and unit force depth)
+      (into [] (remove #(deployment-reason game unit % default-depth))
+            (zone-tiles (:game-board game) (:unit-group/deployment force) depth))
       [])))
 
 (defn eligible-location? [game unit tile depth]

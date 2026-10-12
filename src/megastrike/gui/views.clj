@@ -264,7 +264,6 @@
         unit (subs/active-unit context)
         turn-order (subs/turn-order context)
         [step message] (phase-guidance phase (boolean unit))
-        error (fx/sub-val context get-in [:gui :deployment-error])
         phase-buttons (cond
                         (= phase :deployment) (elements/deploy-buttons (empty? turn-order))
                         (= phase :movement) (if unit (elements/move-buttons unit) [])
@@ -286,10 +285,8 @@
                  :spacing 12
                  :style-class ["battle-guidance"]
                  :children [{:fx/type :label :text step :style-class ["battle-guidance-step"]}
-                            {:fx/type :label :text (if (and (= phase :deployment) (seq error)) error message)
+                            {:fx/type :label :text message
                              :wrap-text true
-                             :style (if (and (= phase :deployment) (seq error))
-                                      "-fx-text-fill: #ffb6a6;" "-fx-text-fill: #e2e4e6;")
                              :style-class ["battle-guidance-message"]}]}
                 {:fx/type :h-box
                  :alignment :center-left
@@ -308,11 +305,33 @@
                                        :children secondary}}
                             primary]}]}))
 
+(defn battle-map-with-toast [{:keys [fx/context]}]
+  (let [message (fx/sub-val context get-in [:gui :deployment-error])]
+    {:fx/type :stack-pane
+     :children (cond-> [{:fx/type game-board}]
+                 (seq message)
+                 (conj {:fx/type :h-box
+                        :stack-pane/alignment :bottom-right
+                        :stack-pane/margin {:bottom 20 :right 20}
+                        :mouse-transparent true
+                        :alignment :center-left
+                        :max-width 390
+                        :max-height 72
+                        :spacing 10
+                        :style "-fx-background-color: #3a1719; -fx-border-color: #b64b4f; -fx-border-width: 1; -fx-background-radius: 1; -fx-border-radius: 1; -fx-padding: 12 16; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.45), 12, 0, 0, 3);"
+                        :children [{:fx/type :label
+                                    :text "!"
+                                    :style "-fx-text-fill: #ffb3b6; -fx-font-weight: bold; -fx-font-size: 18px;"}
+                                   {:fx/type :label
+                                    :text message
+                                    :wrap-text true
+                                    :style "-fx-text-fill: #f7eeee; -fx-font-size: 13px;"}]}))}))
+
 (defn game-view [_]
   {:fx/type :border-pane
    :style-class ["battle-root"]
    :top {:fx/type battle-top-bar}
-   :center {:fx/type game-board}
+   :center {:fx/type battle-map-with-toast}
    :right {:fx/type battle-sidebar}
    :bottom {:fx/type battle-command-bar}})
 

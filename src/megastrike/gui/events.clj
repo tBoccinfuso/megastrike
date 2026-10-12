@@ -21,6 +21,9 @@
    [megastrike.utils :as utils])
   (:import
    [javafx.application Platform]
+   [javafx.animation PauseTransition]
+   [javafx.util Duration]
+   [javafx.event EventHandler]
    [javafx.event ActionEvent]
    [javafx.scene Node]
    [javafx.scene.control
@@ -48,6 +51,39 @@
 
 ;; Shared skirmish deployment-zone depth. Keep before all event handlers.
 (def deployment-zone-depth 3)
+
+(def toast-event-dispatcher (atom nil))
+
+(defmethod event-handler ::dismiss-deployment-toast
+  [{:keys [fx/context token]}]
+  {:context (fx/swap-context context
+                             (fn [state]
+                               (if (= token (get-in state [:gui :deployment-toast-token]))
+                                 (-> state
+                                     (assoc-in [:gui :deployment-error] nil)
+                                     (assoc-in [:gui :deployment-toast-token] nil))
+                                 state)))})
+
+(defn deployment-error-context
+  "Show an error toast for two seconds, dismissing it through the live event
+  handler. Each toast has a token so an older timer cannot remove a newer one."
+  [context message]
+  (let [token (when (seq message) (str (java.util.UUID/randomUUID)))
+        next-context (fx/swap-context context
+                                      (fn [state]
+                                        (-> state
+                                            (assoc-in [:gui :deployment-error] message)
+                                            (assoc-in [:gui :deployment-toast-token] token))))]
+    (when token
+      (let [timer (PauseTransition. (Duration/millis 2000.0))]
+        (.setOnFinished timer
+                        (reify EventHandler
+                          (handle [_ _]
+                            (when-let [dispatch! @toast-event-dispatcher]
+                              (dispatch! {:event-type ::dismiss-deployment-toast
+                                          :token token})))))
+        (.play timer)))
+    next-context))
 
 ;; Main menu navigation
 (defmethod event-handler ::start-singleplayer
@@ -212,13 +248,13 @@
                        " units. Complete deployment manually."))]
     (when (fx/sub-val context :singleplayer?)
       (reset! server/game-state next-game))
-    {:context (fx/swap-context context
-                               (fn [state]
-                                 (-> state
-                                     (assoc :game next-game :app-phase :game)
-                                     (assoc-in [:gui :layout :scale] 0.65)
-                                     (assoc-in [:gui :deployment-error] problem)
-                                     (assoc-in [:lobby :skirmish-launch-error] nil))))
+    {:context (deployment-error-context
+               (fx/swap-context context
+                                (fn [state]
+                                  (-> state
+                                      (assoc :game next-game :app-phase :game)
+                                      (assoc-in [:gui :layout :scale] 0.65)
+                                      (assoc-in [:lobby :skirmish-launch-error] nil)))) problem)
      :dispatch {:event-type ::open-round-dialog}}))
 
 (defmethod event-handler ::battle-load-failed
@@ -411,9 +447,7 @@
   (cond
     (nil? unit) "Select an undeployed unit from the roster first."
     (:unit/acted? unit) "That unit has already deployed."
-    (not (deployment/eligible-location? game unit hex deployment-zone-depth))
-    "Choose an unoccupied hex in this force's highlighted deployment zone."
-    :else nil))
+    :else (deployment/deployment-reason game unit hex deployment-zone-depth)))
 
 (defmethod event-handler ::hex-clicked
   [{:keys [fx/context hex fx/event]}]
@@ -425,7 +459,7 @@
         problem (when (= :deployment (:current-phase game))
                   (deployment-placement-result game unit hex))]
     (if problem
-      {:context (fx/swap-context context assoc-in [:gui :deployment-error] problem)}
+      {:context (deployment-error-context context problem)}
       {:context (fx/swap-context context
                                  (fn [state]
                                    (-> state
@@ -630,10 +664,8 @@
                   (str "Could not automatically place " (count (:unplaced result))
                        " units. Complete deployment manually.")
                   (:blocked? kevin) "Kevin could not find a legal deployment hex. Review deployment zones and space.")]
-    {:context (fx/swap-context context (fn [state]
-                 (-> state
-                     (assoc :game next-game :gui phase-gui)
-                     (assoc-in [:gui :deployment-error] problem))))
+    {:context (deployment-error-context
+               (fx/swap-context context assoc :game next-game :gui phase-gui) problem)
      :dispatch {:event-type ::open-round-dialog}}))
 
 ;; Deployment Phase
@@ -661,7 +693,7 @@
         conn (subs/connection context)
         player (subs/client-player context)]
     (if problem
-      {:context (fx/swap-context context assoc-in [:gui :deployment-error] problem)}
+      {:context (deployment-error-context context problem)}
       (let [{:keys [game gui]} (turn-manager/deploy-unit game (subs/gui context))
             kevin (advance-kevin-deployment game (fx/sub-val context :singleplayer?))
             game (:game kevin)
@@ -670,8 +702,9 @@
                          "Kevin could not find a legal deployment hex. Review deployment zones and space."))]
         (when (and conn (not (fx/sub-val context :singleplayer?)))
           (client/deploy-unit-message conn player (:unit/id active-unit)))
-        {:context (fx/swap-context context assoc :game game
-                                   :gui gui)}))))
+        {:context (deployment-error-context
+                   (fx/swap-context context assoc :game game :gui gui)
+                   (:deployment-error gui))}))))
 
 (defmethod event-handler ::confirm-move
   [{:keys [fx/context]}]

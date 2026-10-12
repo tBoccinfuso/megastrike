@@ -72,3 +72,41 @@
         result (deployment/auto-deploy (assoc game :game-board board) 2)]
     (is (seq (:unplaced result)))
     (is (<= (count (filter deployment/deployed? (get-in result [:game :units]))) 1))))
+
+(deftest stage5b-validation-reasons
+  (let [game (fixture-game)
+        unit (first (:units game))
+        legal (first (deployment/legal-tiles game unit 2))
+        outside (first (deployment/legal-tiles game (second (:units game)) 2))]
+    (is (nil? (deployment/deployment-reason game unit legal 2)))
+    (is (= "Outside your deployment zone."
+           (deployment/deployment-reason game unit outside 2)))
+    (is (= "That hex is occupied."
+           (deployment/deployment-reason (assoc-in game [:units 1 :unit/location]
+                                                   (deployment/location-key legal)) unit legal 2)))
+    (is (= "Deployment is blocked on that hex."
+           (deployment/deployment-reason
+             (update-in game [:game-board :tiles]
+                        (fn [ts] (mapv #(if (= (deployment/location-key %) (deployment/location-key legal))
+                                          (assoc % :deployment/blocked? true) %) ts)))
+             unit legal 2)))
+    (is (= "Choose a hex on the map."
+           (deployment/deployment-reason game unit {:hex/p 900 :hex/q 0 :hex/r -900} 2)))))
+
+(deftest scenario-configured-depth
+  (let [game (assoc-in (fixture-game) [:deployment :depth-hexes] 1)
+        unit (first (:units game))]
+    (is (= 6 (count (deployment/legal-tiles game unit 3))))))
+
+(deftest explicit-scenario-forbidden-terrain
+  (let [game (fixture-game)
+        unit (first (:units game))
+        candidate (first (deployment/legal-tiles game unit 2))
+        game (-> game
+                 (assoc-in [:deployment :forbidden-terrain] #{"deep_water"})
+                 (update-in [:game-board :tiles]
+                            (fn [ts] (mapv #(if (= (deployment/location-key %) (deployment/location-key candidate))
+                                              (assoc % :terrain "deep_water") %) ts))))]
+    (is (= "Deployment is restricted on that terrain."
+           (deployment/deployment-reason game unit candidate 2)))
+    (is (not (deployment/eligible-location? game unit candidate 2)))))
