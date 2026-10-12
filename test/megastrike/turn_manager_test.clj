@@ -147,3 +147,27 @@
                                    :combat-result/target-number 6})
            "Wolfhound WLF-2 attacks Wolfhound WLF-2 #2. Using a regular attack. Needs a 6.\nRolled a 4\nAttack misses.\n\n\n\n")))
 
+
+(t/deftest selecting-friendly-unit-preserves-game-state
+  (let [unit {:unit/id "friendly" :unit/battle-force :blue :unit/acted? false}
+        game {:current-phase :movement :units [unit] :turn-order [:blue]
+              :game-board {:tiles []} :marker :preserved}
+        gui {:active-unit nil}
+        result (sut/unit-clicked game gui unit)]
+    (t/is (= game (:game result)))
+    (t/is (= "friendly" (get-in result [:gui :active-unit])))))
+
+(t/deftest kevin-facing-uses-planned-destination
+  (let [layout (megastrike.hexagons.hex/create-layout)
+        friendly {:unit/id "kevin" :unit/battle-force :red
+                  :unit/location {:hex/p 0 :hex/q 0 :hex/r 0}
+                  :unit/facing :direction/n}
+        enemy {:unit/id "player" :unit/battle-force :blue
+               :unit/location {:hex/p 3 :hex/q 0 :hex/r -3}}
+        destination {:hex/p 1 :hex/q 0 :hex/r -1}
+        facing (sut/kevin-facing friendly [destination] [friendly enemy] layout)]
+    (t/is (= (megastrike.hexagons.hex/facing destination
+                  (megastrike.hexagons.hex/hex->pixel (:unit/location enemy) layout)
+                  layout)
+             facing))
+    (t/is (= :direction/n (sut/kevin-facing friendly [] [friendly] layout)))))

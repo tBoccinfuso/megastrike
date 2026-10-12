@@ -9,6 +9,9 @@
    [megastrike.board :as board]
    [megastrike.client :as client]
    [megastrike.combat-unit :as cu]
+   [megastrike.deployment :as deployment]
+   [megastrike.strategic-deployment :as strategic-deployment]
+   [megastrike.skirmish-pv :as skirmish-pv]
    [megastrike.gui.subs :as subs]
    [megastrike.logs :as logs]
    [megastrike.movement :as movement]
@@ -19,6 +22,9 @@
    [megastrike.utils :as utils])
   (:import
    [javafx.application Platform]
+   [javafx.animation PauseTransition]
+   [javafx.util Duration]
+   [javafx.event EventHandler]
    [javafx.event ActionEvent]
    [javafx.scene Node]
    [javafx.scene.control
@@ -43,6 +49,42 @@
           :keys (keys event)))
 
 (declare default-skirmish-forces)
+
+;; Shared skirmish deployment-zone depth. Keep before all event handlers.
+(def deployment-zone-depth 3)
+
+(def toast-event-dispatcher (atom nil))
+
+(defmethod event-handler ::dismiss-deployment-toast
+  [{:keys [fx/context token]}]
+  {:context (fx/swap-context context
+                             (fn [state]
+                               (if (= token (get-in state [:gui :deployment-toast-token]))
+                                 (-> state
+                                     (assoc-in [:gui :deployment-error] nil)
+                                     (assoc-in [:gui :deployment-toast-token] nil))
+                                 state)))})
+
+(defn deployment-error-context
+  "Show an error toast for two seconds, dismissing it through the live event
+  handler. Each toast has a token so an older timer cannot remove a newer one."
+  [context message]
+  (let [token (when (seq message) (str (java.util.UUID/randomUUID)))
+        next-context (fx/swap-context context
+                                      (fn [state]
+                                        (-> state
+                                            (assoc-in [:gui :deployment-error] message)
+                                            (assoc-in [:gui :deployment-toast-token] token))))]
+    (when token
+      (let [timer (PauseTransition. (Duration/millis 2000.0))]
+        (.setOnFinished timer
+                        (reify EventHandler
+                          (handle [_ _]
+                            (when-let [dispatch! @toast-event-dispatcher]
+                              (dispatch! {:event-type ::dismiss-deployment-toast
+                                          :token token})))))
+        (.play timer)))
+    next-context))
 
 ;; Main menu navigation
 (defmethod event-handler ::start-singleplayer
@@ -135,6 +177,14 @@
                                          (assoc-in [:lobby :map-boards] mapsheets)
                                          (assoc-in [:lobby :skirmish-launch-error] nil))))}))))
 
+(defmethod event-handler ::toggle-skirmish-advanced
+  [{:keys [fx/context]}]
+  {:context (fx/swap-context context update-in [:lobby :options :advanced-expanded] not)})
+
+(defmethod event-handler ::set-skirmish-option
+  [{:keys [fx/context option fx/event]}]
+  {:context (fx/swap-context context assoc-in [:lobby :options option] (boolean event))})
+
 (defmethod event-handler ::filter-changed
   [{:keys [fx/context values]}]
   {:context (fx/swap-context context
@@ -168,13 +218,31 @@
 (defmethod event-handler ::launch-game
   [{:keys [fx/context]}]
   (let [game (subs/game context)
-        selected-boards (vec (or (subs/map-boards context) []))
-        error (skirmish-launch-error game selected-boards)]
+        random? (true? (fx/sub-val context get-in [:lobby :options :random-map]))
+        width (positive-board-count (:map-width game))
+        height (positive-board-count (:map-height game))
+        choices (when random? (available-mapboards))
+        selected-boards (if (and random? width height (seq choices))
+                          (mapv #(board/create-mapsheet (.getPath ^java.io.File %))
+                                (take (* width height) (cycle (shuffle choices))))
+                          (vec (or (subs/map-boards context) [])))
+        pv-bracket (fx/sub-val context get-in [:lobby :options :pv-bracket])
+        totals (mapv (fn [force]
+                       (reduce + (map cu/pv (filter #(= (:unit/battle-force %) (:unit-group/keyword force)) (:units game)))))
+                     (:forces game))
+        pv-error (when (= 2 (count totals))
+                   (skirmish-pv/validation-message pv-bracket (first totals) (second totals)))
+        error (or (when (and random? (empty? choices)) "No .board files found for Random Map.")
+                  (skirmish-launch-error game selected-boards)
+                  pv-error)]
     (if error
       {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error] error)}
       (let [width (positive-board-count (:map-width game))
             height (positive-board-count (:map-height game))]
-        {:context (fx/swap-context context assoc :app-phase :battle-loading)
+        {:context (fx/swap-context context
+                                   (fn [state] (-> state
+                                                   (assoc :app-phase :battle-loading)
+                                                   (assoc-in [:lobby :map-boards] selected-boards))))
          :prepare-battle {:game game
                           :boards selected-boards
                           :width width
@@ -182,15 +250,23 @@
 
 (defmethod event-handler ::battle-ready
   [{:keys [fx/context game]}]
-  (when (fx/sub-val context :singleplayer?)
-    (reset! server/game-state game))
-  {:context (fx/swap-context context
-                             (fn [state]
-                               (-> state
-                                   (assoc :game game :app-phase :game)
-                                   (assoc-in [:gui :layout :scale] 0.65)
-                                   (assoc-in [:lobby :skirmish-launch-error] nil))))
-   :dispatch {:event-type ::open-round-dialog}})
+  (let [auto? (and (fx/sub-val context :singleplayer?)
+                   (true? (fx/sub-val context get-in [:lobby :options :smart-auto-deploy])))
+        result (when auto? (strategic-deployment/auto-deploy-from-initiative game deployment-zone-depth))
+        next-game (if result (:game result) game)
+        problem (when (and result (seq (:unplaced result)))
+                  (str "Could not automatically place " (count (:unplaced result))
+                       " units. Complete deployment manually."))]
+    (when (fx/sub-val context :singleplayer?)
+      (reset! server/game-state next-game))
+    {:context (deployment-error-context
+               (fx/swap-context context
+                                (fn [state]
+                                  (-> state
+                                      (assoc :game next-game :app-phase :game)
+                                      (assoc-in [:gui :layout :scale] 0.65)
+                                      (assoc-in [:lobby :skirmish-launch-error] nil)))) problem)
+     :dispatch {:event-type ::open-round-dialog}}))
 
 (defmethod event-handler ::battle-load-failed
   [{:keys [fx/context message]}]
@@ -307,6 +383,51 @@
                                 (fn [units] (cu/->combat-unit {:units units :mul-unit selected
                                                                :pilot pilot :battle-force force-id})))})))
 
+(defmethod event-handler ::skirmish-pv-selection
+  [{:keys [fx/context fx/event]}]
+  (let [bracket (case event
+                  "Introductory: 150–200 PV" :intro
+                  "Standard: 250–350 PV" :standard
+                  "Large: 400+ PV" :large
+                  nil)]
+    {:context (fx/swap-context context assoc-in [:lobby :options :pv-bracket] bracket)}))
+
+(defmethod event-handler ::generate-skirmish-forces
+  [{:keys [fx/context]}]
+  (let [bracket (fx/sub-val context get-in [:lobby :options :pv-bracket])
+        mechs-only? (true? (fx/sub-val context get-in [:lobby :options :mechs-only]))
+        forces (vec (subs/forces context))]
+    (cond
+      (not (contains? skirmish-pv/brackets bracket))
+      {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error]
+                                 "Choose a PV bracket before generating forces.")}
+      (not= 2 (count forces))
+      {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error]
+                                 "A skirmish requires two forces.")}
+      :else
+      (let [rosters (mapv (fn [_] (skirmish-pv/random-roster cu/mul bracket mechs-only?)) forces)]
+        (if (some nil? rosters)
+          {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error]
+                                     "Could not assemble both forces in this PV range. Try another bracket.")}
+          (try
+            (let [generated (reduce (fn [units [force roster]]
+                                      (reduce (fn [acc mul-unit]
+                                                (cu/->combat-unit {:units acc
+                                                                   :mul-unit mul-unit
+                                                                   :pilot {:pilot/full-name "Pilot"
+                                                                           :pilot/skill 4 :pilot/kills 0}
+                                                                   :battle-force (:unit-group/keyword force)}))
+                                              units roster))
+                                    [] (map vector forces rosters))]
+              {:context (fx/swap-context context (fn [state]
+                                                   (-> state
+                                                       (assoc-in [:game :units] generated)
+                                                       (assoc-in [:lobby :skirmish-selected] {})
+                                                       (assoc-in [:lobby :skirmish-launch-error] nil))))})
+            (catch Exception _
+              {:context (fx/swap-context context assoc-in [:lobby :skirmish-launch-error]
+                                         "A selected unit could not be loaded. Try generating again.")})))))))
+
 (defmethod event-handler ::skirmish-open-unit-dialog
   [{:keys [fx/context force-id]}]
   {:context (fx/swap-context context (fn [state] (-> state
@@ -376,15 +497,32 @@
       (reset! last-hex-hover-update now)
       {:context (fx/swap-context context assoc-in [:gui :hovered-hex] hex)})))
 
+(defn deployment-placement-result
+  "Validate a hex before the normal placement handler stages a location."
+  [game unit hex]
+  (cond
+    (nil? unit) "Select an undeployed unit from the roster first."
+    (:unit/acted? unit) "That unit has already deployed."
+    :else (deployment/deployment-reason game unit hex deployment-zone-depth)))
+
 (defmethod event-handler ::hex-clicked
   [{:keys [fx/context hex fx/event]}]
   (let [e ^MouseEvent event
         click-location {:x (.getX e) :y (.getY e)}
-        active-unit (subs/active-id context)]
-    {:context (fx/swap-context context assoc :game
-                               (turn-manager/hex-clicked (subs/game context)
-                                                         (subs/layout context)
-                                                         hex click-location active-unit))}))
+        active-id (subs/active-id context)
+        game (subs/game context)
+        unit (cu/select-unit (:units game) active-id)
+        problem (when (= :deployment (:current-phase game))
+                  (deployment-placement-result game unit hex))]
+    (if problem
+      {:context (deployment-error-context context problem)}
+      {:context (fx/swap-context context
+                                 (fn [state]
+                                   (-> state
+                                       (assoc-in [:gui :deployment-error] nil)
+                                       (assoc :game (turn-manager/hex-clicked game
+                                                                              (subs/layout context)
+                                                                              hex click-location active-id)))))})))
 
 (defmethod event-handler ::text-input
   [{:keys [fx/context ks fx/event]}]
@@ -472,32 +610,64 @@
         deployment? (and (= :deployment (:current-phase game))
                          (fx/sub-val context :singleplayer?)
                          selected
+                         (= :local-player (:unit-group/player
+                                          (some #(when (= (:unit-group/keyword %) (:unit/battle-force selected)) %)
+                                                (:forces game))))
                          (not (:unit/acted? selected)))]
     {:context (fx/swap-context context assoc :gui
                                (if deployment?
                                  (assoc gui :active-unit unit :turn-flag false)
                                  (turn-manager/switch-unit game gui unit)))}))
 
+(defn movement-selection-error
+  "Short explanation when a battlefield click cannot select a unit for movement."
+  [game unit]
+  (when (= :movement (:current-phase game))
+    (cond
+      (nil? unit) "That unit is unavailable."
+      (:unit/acted? unit) "That unit has already moved."
+      (not= (:unit/battle-force unit) (first (:turn-order game)))
+      "It's not this unit's movement turn."
+      :else nil)))
+
 (defmethod event-handler ::unit-clicked
   [{:keys [fx/context unit]}]
-  (let [old-state (subs/game context)
-        old-gui (subs/gui context)
-        response (turn-manager/unit-clicked old-state old-gui unit)
-        new-state (:game response)
-        new-gui (:gui response)]
-    {:context (fx/swap-context context assoc :game new-state :gui new-gui)}))
+  (let [game (subs/game context)
+        gui (subs/gui context)
+        problem (movement-selection-error game unit)]
+    (if problem
+      {:context (deployment-error-context context problem)}
+      (let [{new-game :game new-gui :gui} (turn-manager/unit-clicked game gui unit)]
+        {:context (fx/swap-context context assoc :game new-game :gui new-gui)}))))
 
 (defmethod event-handler ::undeploy-unit
   [{:keys [fx/context]}]
-  {:context (fx/swap-context context assoc :game
-                             (turn-manager/undeploy-unit (subs/game context)
-                                                         (subs/gui context)))})
+  (let [unit (subs/active-unit context)]
+    (cond
+      (nil? unit) {:context (deployment-error-context context "Select a unit to undeploy.")}
+      (:unit/acted? unit) {:context (deployment-error-context context "This unit has already deployed.")}
+      (not= :deployment (:current-phase (subs/game context)))
+      {:context (deployment-error-context context "Undeploy is only available during deployment.")}
+      :else {:context (fx/swap-context context assoc :game
+                                       (turn-manager/undeploy-unit (subs/game context)
+                                                                   (:unit/id unit)))})))
 
 ;; Movement Phase
 
+(def facing-clockwise [:direction/n :direction/ne :direction/se :direction/s :direction/sw :direction/nw])
+
+(defn next-facing [facing]
+  (let [idx (.indexOf facing-clockwise facing)]
+    (nth facing-clockwise (mod (inc idx) (count facing-clockwise)))))
+
 (defmethod event-handler ::turn-button-clicked
   [{:keys [fx/context]}]
-  {:context (fx/swap-context context update-in [:game :turn-flag] not)})
+  (if-let [unit (subs/active-unit context)]
+    {:context (fx/swap-context context update-in [:game :units]
+                               (fn [units]
+                                 (cu/update-unit units (:unit/id unit) :unit/facing
+                                                 (next-facing (:unit/facing unit)))))}
+    {:context (deployment-error-context context "Select a unit to turn.")}))
 
 (defmethod event-handler ::set-movement-mode
   [{:keys [fx/context unit mode]}]
@@ -557,31 +727,69 @@
 
 ;; Server Events
 
+(declare advance-kevin-deployment)
+
 (defmethod event-handler ::next-phase
   [{:keys [fx/context]}]
-  {:context (fx/swap-context context assoc :game
-                             (turn-manager/advance-turn (subs/game context)
-                                                        (subs/gui context)
-                                                        (subs/layout context)))
-   :dispatch {:event-type ::open-round-dialog}})
+  (let [game (subs/game context)
+        advanced (turn-manager/advance-turn game (subs/gui context) (subs/layout context))
+        phase-game (or (:game advanced) advanced)
+        phase-gui (or (:gui advanced) (subs/gui context))
+        auto? (and (fx/sub-val context :singleplayer?)
+                   (true? (fx/sub-val context get-in [:lobby :options :smart-auto-deploy]))
+                   (= :initiative (:current-phase game))
+                   (= :deployment (:current-phase phase-game)))
+        result (when auto? (strategic-deployment/auto-deploy-from-initiative game deployment-zone-depth))
+        pre-kevin-game (if result (:game result) phase-game)
+        kevin (when (and (fx/sub-val context :singleplayer?) (not auto?))
+                (advance-kevin-deployment pre-kevin-game true))
+        next-game (if kevin (:game kevin) pre-kevin-game)
+        problem (cond
+                  (and result (seq (:unplaced result)))
+                  (str "Could not automatically place " (count (:unplaced result))
+                       " units. Complete deployment manually.")
+                  (:blocked? kevin) "Kevin could not find a legal deployment hex. Review deployment zones and space.")]
+    {:context (deployment-error-context
+               (fx/swap-context context assoc :game next-game :gui phase-gui) problem)
+     :dispatch {:event-type ::open-round-dialog}}))
 
 ;; Deployment Phase
+(defn advance-kevin-deployment [game singleplayer?]
+  (if singleplayer?
+    (strategic-deployment/auto-deploy-kevin-turns game deployment-zone-depth)
+    {:game game :blocked? false}))
+
 (defmethod event-handler ::deploy-unit
   [{:keys [fx/context]}]
-  (let [active-unit (subs/active-unit context)
-        deployed? (and active-unit (movement/deployed? active-unit))
+  (let [game (subs/game context)
+        active-unit (subs/active-unit context)
+        location (:unit/location active-unit)
+        staged? (and active-unit (movement/deployed? active-unit))
+        force (some #(when (= (:unit/battle-force active-unit) (:unit-group/keyword %)) %) (:forces game))
+        player-controlled? (and (fx/sub-val context :singleplayer?)
+                                (= :deployment (:current-phase game)))
+        problem (cond
+                  (and player-controlled? (not= :local-player (:unit-group/player force)))
+                  "Kevin deploys his own units automatically. Select a unit from your force."
+                  (and player-controlled? (not= (:unit/battle-force active-unit) (first (:turn-order game))))
+                  "Wait for your force's deployment turn."
+                  (not staged?) "Select a unit, then click a highlighted deployment hex."
+                  :else (deployment-placement-result game active-unit location))
         conn (subs/connection context)
         player (subs/client-player context)]
-    (if deployed?
-      (let [{:keys [game gui]} (turn-manager/deploy-unit (subs/game context)
-                                                         (subs/gui context))]
-        ;; Singleplayer already updates local state. Sending a second server
-        ;; event currently produces an unhandled event and can overwrite it.
+    (if problem
+      {:context (deployment-error-context context problem)}
+      (let [{:keys [game gui]} (turn-manager/deploy-unit game (subs/gui context))
+            kevin (advance-kevin-deployment game (fx/sub-val context :singleplayer?))
+            game (:game kevin)
+            gui (assoc gui :deployment-error
+                       (when (:blocked? kevin)
+                         "Kevin could not find a legal deployment hex. Review deployment zones and space."))]
         (when (and conn (not (fx/sub-val context :singleplayer?)))
           (client/deploy-unit-message conn player (:unit/id active-unit)))
-        {:context (fx/swap-context context assoc :game game :gui gui)})
-      {:context (fx/swap-context context assoc-in [:gui :deployment-error]
-                                 "Select a unit, then click a hex before deploying.")})))
+        {:context (deployment-error-context
+                   (fx/swap-context context assoc :game game :gui gui)
+                   (:deployment-error gui))}))))
 
 (defmethod event-handler ::confirm-move
   [{:keys [fx/context]}]

@@ -104,6 +104,8 @@
         :connect create-connection-effect
         :prepare-battle prepare-battle-effect})))
 
+(reset! events/toast-event-dispatcher event-handler)
+
 (def type->lifecycle #(or (fx/keyword->lifecycle %)
                           (fx/fn->lifecycle-with-context %)))
 

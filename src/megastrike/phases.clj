@@ -3,6 +3,7 @@
    [clojure.math :as math]
    [com.brunobonacci.mulog :as mu]
    [megastrike.combat-unit :as cu]
+   [megastrike.deployment-setup :as deployment-setup]
    [megastrike.movement :as movement]
    [megastrike.utils :as utils]))
 
@@ -68,7 +69,7 @@
   "Generates the turn order based on the number of units who haven't been deployed yet."
   [{:keys [forces units round-report] :as game-state}]
   (let [deployable-units (remove (fn [unit] (movement/deployed? unit)) units)
-        turn-order (generate-turn-order forces deployable-units)
+        turn-order (deployment-setup/turn-order game-state)
         round-string (str "Deployment Phase\n" "Deployment order: " (reduce str (map #(str % ", ") turn-order)) "\n\n----------\n")
         report (str round-report round-string)]
     (mu/log ::begin-deployment-phase

@@ -8,6 +8,7 @@
    [megastrike.gui.lobby.skirmish :as skirmish]
    [megastrike.gui.subs :as subs]
    [megastrike.battle-force :as battle-force]
+   [megastrike.deployment :as deployment]
    [megastrike.movement :as movement]
    [megastrike.hexagons.hex :as hex])
   (:import
@@ -81,7 +82,12 @@
         layout (subs/layout context)
         units (subs/units context)
         unit-locations (filter movement/deployed? units)
-        destinations (filter #(pos? (count (:unit/path %))) (subs/units context))]
+        destinations (filter #(pos? (count (:unit/path %))) (subs/units context))
+        game (subs/game context)
+        active (subs/active-unit context)
+        legal (when (and (= :deployment (:current-phase game)) active
+                         (not (:unit/acted? active)))
+                (deployment/legal-tiles game active events/deployment-zone-depth))]
     {:fx/type :scroll-pane
      :style-class ["battle-map-scroll"]
      :focus-traversable true
@@ -121,6 +127,13 @@
                            :on-scroll {:event-type ::events/battle-map-scroll :fx/sync true}
                            :children (concat
                           (static-map-layer gb layout)
+                          (for [h legal]
+                            {:fx/type :polygon
+                             :points (hex/points h layout)
+                             :fill (javafx.scene.paint.Color/web "#20c5d8" 0.30)
+                             :stroke (javafx.scene.paint.Color/web "#e6fcff" 0.95)
+                             :stroke-width 2.0
+                             :mouse-transparent true})
                           (for [t unit-locations]
                             {:fx/type elements/draw-unit
                              :unit t
@@ -272,7 +285,9 @@
                  :spacing 12
                  :style-class ["battle-guidance"]
                  :children [{:fx/type :label :text step :style-class ["battle-guidance-step"]}
-                            {:fx/type :label :text message :wrap-text true :style-class ["battle-guidance-message"]}]}
+                            {:fx/type :label :text message
+                             :wrap-text true
+                             :style-class ["battle-guidance-message"]}]}
                 {:fx/type :h-box
                  :alignment :center-left
                  :spacing 8
@@ -290,11 +305,33 @@
                                        :children secondary}}
                             primary]}]}))
 
+(defn battle-map-with-toast [{:keys [fx/context]}]
+  (let [message (fx/sub-val context get-in [:gui :deployment-error])]
+    {:fx/type :stack-pane
+     :children (cond-> [{:fx/type game-board}]
+                 (seq message)
+                 (conj {:fx/type :h-box
+                        :stack-pane/alignment :bottom-right
+                        :stack-pane/margin {:bottom 20 :right 20}
+                        :mouse-transparent true
+                        :alignment :center-left
+                        :max-width 390
+                        :max-height 72
+                        :spacing 10
+                        :style "-fx-background-color: #3a1719; -fx-border-color: #b64b4f; -fx-border-width: 1; -fx-background-radius: 1; -fx-border-radius: 1; -fx-padding: 12 16; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.45), 12, 0, 0, 3);"
+                        :children [{:fx/type :label
+                                    :text "!"
+                                    :style "-fx-text-fill: #ffb3b6; -fx-font-weight: bold; -fx-font-size: 18px;"}
+                                   {:fx/type :label
+                                    :text message
+                                    :wrap-text true
+                                    :style "-fx-text-fill: #f7eeee; -fx-font-size: 13px;"}]}))}))
+
 (defn game-view [_]
   {:fx/type :border-pane
    :style-class ["battle-root"]
    :top {:fx/type battle-top-bar}
-   :center {:fx/type game-board}
+   :center {:fx/type battle-map-with-toast}
    :right {:fx/type battle-sidebar}
    :bottom {:fx/type battle-command-bar}})
 
